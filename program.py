@@ -5,7 +5,7 @@ with JTAG() as jtag:
 	jtag.open(0)
 
 	print "Discovering JTAG Chain ..."
-	jtag.readChain()
+	jtag.detect()
 
 	print "Found %i devices ...\n" % jtag.deviceCount
 
@@ -15,4 +15,6 @@ with JTAG() as jtag:
 	print "\n"
 
 	print "Beginning programming..."
+
+	#jtag.
 

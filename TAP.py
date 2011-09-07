@@ -1,4 +1,9 @@
-class TAPStateError(Exception): pass
+class TAPStateError(Exception):
+	def __init__(self, current, destination):
+		self.current = TAP.STR_TRANSLATE[current]
+		self.destination = TAP.STR_TRANSLATE[destination]
+	def __str__(self):
+		return self.current + " -> " + self.destination
 
 class TAP:
 	TLR = 0
@@ -42,7 +47,7 @@ class TAP:
 	def __init__(self, jtagClock):
 		self.jtagClock = jtagClock
 		self.state = None
-		self.debug = 0
+		self.debug = 1
 	
 	def reset(self):
 		for i in range(6):
@@ -59,27 +64,8 @@ class TAP:
 		state = self.state
 		self.state = TAP.TRANSITIONS[self.state][tms]
 
-		print "TAP-DEBUG: Transitioned (%i) from %i to %i." % (tms, state, self.state)
-	
-	def shiftIR(self, bits):
-		self.goto(TAP.SELECT_IR)
-		self.goto(TAP.SHIFT_IR)
-
-		for bit in bits[:-1]:
-			self.jtagClock(tdi=bit)
-		self.jtagClock(tdi=bits[-1], tms=1)
-
-		self.goto(TAP.IDLE)
-	
-	def shiftDR(self, bits):
-		self.goto(TAP.SELECT_DR)
-		self.goto(TAP.SHIFT_DR)
-
-		for bit in bits[:-1]:
-			self.jtagClock(tdi=bit)
-		self.jtagClock(tdi=bits[-1], tms=1)
-
-		self.goto(TAP.IDLE)
+		if self.debug:
+			print "TAP-DEBUG: Transitioned (%i) from %s to %s." % (tms, TAP.STR_TRANSLATE[state], TAP.STR_TRANSLATE[self.state])
 
 	
 	# When goto is called, we look at where we want to go and where we are.
@@ -98,35 +84,35 @@ class TAP:
 			self.jtagClock(tms=0)
 		elif state == TAP.SELECT_DR:
 			if self.state != TAP.IDLE:
-				raise TAPStateError()
+				raise TAPStateError(self.state, state)
 
 			self.jtagClock(tms=1)
 		elif state == TAP.SELECT_IR:
 			if self.state != TAP.IDLE:
-				raise TAPStateError()
+				raise TAPStateError(self.state, state)
 
 			self.jtagClock(tms=1)
 			self.jtagClock(tms=1)
 		elif state == TAP.SHIFT_DR:
 			if self.state != TAP.SELECT_DR:
-				raise TAPStateError()
+				raise TAPStateError(self.state, state)
 
 			self.jtagClock(tms=0)
 			self.jtagClock(tms=0)
 		elif state == TAP.SHIFT_IR:
 			if self.state != TAP.SELECT_IR:
-				raise TAPStateError()
+				raise TAPStateError(self.state, state)
 
 			self.jtagClock(tms=0)
 			self.jtagClock(tms=0)
 		elif state == TAP.IDLE:
-			if self.state != TAP.EXIT1_DR or self.state != TAP.EXIT1_IR:
-				raise TAPStateError()
+			if self.state != TAP.EXIT1_DR and self.state != TAP.EXIT1_IR:
+				raise TAPStateError(self.state, state)
 
 			self.jtagClock(tms=1)
 			self.jtagClock(tms=0)
 		else:
-			raise TAPStateError()
+			raise TAPStateError(self.state, state)
 
 
 		if self.state != state:

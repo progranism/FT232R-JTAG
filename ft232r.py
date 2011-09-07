@@ -1,5 +1,6 @@
 import d2xx
 import struct
+from TAP import TAP
 
 
 DEFAULT_FREQUENCY = 3000000
@@ -25,11 +26,13 @@ class FT232R_PortList:
 
 class FT232R:
 	def __init__(self):
+		self.tap = TAP(self.jtagClock)
 		self.handle = None
 		self.debug = 0
 		self.synchronous = None
 		self.write_buffer = ""
 		self.portlist = None
+		self._tckcount = 0
 	
 	def _log(self, msg, level=1):
 		if level <= self.debug:
@@ -111,6 +114,9 @@ class FT232R:
 		self.write_buffer += self._formatJtagState(0, tms, tdi)
 		self.write_buffer += self._formatJtagState(1, tms, tdi)
 		self.write_buffer += self._formatJtagState(1, tms, tdi)
+
+		self.tap.clocked(tms)
+		self._tckcount += 1
 	
 	def flush(self):
 		self._setAsyncMode()
@@ -148,6 +154,33 @@ class FT232R:
 				bits.append((ord(read[n*3+2]) >> self.portlist.tdo)&1)
 
 		return bits
+	
+#	def shiftIR(self, bits):
+#		self.tap.goto(TAP.SELECT_IR)
+#		self.tap.goto(TAP.SHIFT_IR)
+#
+#		for bit in bits[:-1]:
+#			self.jtagClock(tdi=bit)
+#		self.jtagClock(tdi=bits[-1], tms=1)
+#
+#		self.tap.goto(TAP.IDLE)
+#	
+#	def shiftDR(self, bits, read=False):
+#		self.tap.goto(TAP.SELECT_DR)
+#		self.tap.goto(TAP.SHIFT_DR)
+#
+#		for bit in bits[:-1]:
+#			self.jtagClock(tdi=bit)
+#		self.jtagClock(tdi=bits[-1], tms=1)
+#
+#		t1 = self.tckcount
+#		self.tap.goto(TAP.IDLE)
+#
+#		if read:
+#			return self.readTDO(len(bits)+self.tckcount-t1)[:len(bits)]
+#	
+#	def readDR(self, bits):
+#		return self.shiftDR(bits, True)
 
 
 	

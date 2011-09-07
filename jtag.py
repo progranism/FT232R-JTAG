@@ -4,10 +4,12 @@
 #
 
 from ft232r import FT232R, FT232R_PortList
+from TAP import TAP
 
 
 class NoDevicesDetected(Exception): pass
 class IDCodesNotRead(Exception): pass
+class ChainNotProperlyDetected(Exception): pass
 
 class UnknownIDCode(Exception):
 	def __init__(self, idcode):
@@ -30,6 +32,86 @@ class JTAG(FT232R):
 		self.deviceCount = None
 		self.idcodes = None
 		self.irlengths = None
+		self.current_instructions = [1] * 100	# Default is to put all possible devices into BYPASS. # TODO: Should be 1000
+		self.current_part = 0
+	
+	# Call this first.
+	def open(self, devicenum):
+		portlist = FT232R_PortList(3, 2, 1, 0)
+
+		FT232R.open(self, devicenum, portlist)
+	
+	# Detect all devices on the JTAG chain. Call this after open.
+	def detect(self):
+		self.deviceCount = None
+		self.idcodes = None
+		self.irlengths = None
+
+		self._readDeviceCount()
+		self._readIdcodes()
+		self._processIdcodes()
+
+		self.reset()
+		self.part(0)
+		self.flush()
+	
+	# Change the active part.
+	def part(self, part):
+		self.current_part = part
+	
+	def instruction(self, instruction):
+		if self.irlengths is None:
+			raise ChainNotProperlyDetected()
+
+		start = sum(self.irlengths[self.current_part+1:])
+		end = start + self.irlengths[self.current_part]
+
+		for i in range(len(self.current_instructions)):
+			if i >= start and i < end:
+				self.current_instructions[i] = instruction & 1
+				instruction >>= 1
+			else:
+				self.current_instructions[i] = 1
+
+
+	# Reset JTAG chain
+	def reset(self):
+		total_ir = 100 # TODO: Should be 1000
+		if self.irlengths is not None:
+			total_ir = sum(self.irlengths)
+
+		self.current_instructions = [1] * total_ir
+		#self.shift_ir()
+		self.tap.reset()
+	
+	def shift_ir(self):
+		self.tap.goto(TAP.SELECT_IR)
+		self.tap.goto(TAP.SHIFT_IR)
+
+		for bit in self.current_instructions[:-1]:
+			self.jtagClock(tdi=bit)
+		self.jtagClock(tdi=self.current_instructions[-1], tms=1)
+
+		self.tap.goto(TAP.IDLE)
+	
+	def shift_dr(self, bits, read=False):
+		self.tap.goto(TAP.SELECT_DR)
+		self.tap.goto(TAP.SHIFT_DR)
+
+		bits += [0] * self.current_part
+
+		for bit in bits[:-1]:
+			self.jtagClock(tdi=bit)
+		self.jtagClock(tdi=bits[-1], tms=1)
+
+		self._tckcount = 0
+		self.tap.goto(TAP.IDLE)
+
+		if read:
+			return self.readTDO(len(bits)+self._tckcount)[:len(bits)]
+	
+	def read_dr(self, bits):
+		return self.shift_dr(bits, read=True)
 	
 	def __enter__(self):
 		return self
@@ -40,15 +122,6 @@ class JTAG(FT232R):
 		self.close()
 
 		return False
-
-	def _log(self, msg, level=1):
-		if level <= self.debug:
-			print "FT232RJTAG: " + msg
-	
-	def open(self, devicenum):
-		portlist = FT232R_PortList(3, 2, 1, 0)
-
-		FT232R.open(self, devicenum, portlist)
 	
 	# Run a stress test of the JTAG chain to make sure communications
 	# will run properly.
@@ -79,83 +152,64 @@ class JTAG(FT232R):
 
 	# TODO: Why is the data sent backwards!?!?!
 	# NOTE: It seems that these are designed specifically for Xilinx's
-	# weird bit ordering when reading various registers. Most specifically,
+	# weird bit ordering when writing to CFG registers. Most specifically,
 	# bitstreams are sent MSB first.
-	def sendByte(self, val, last=True):
-		if self.handle is None:
-			raise FT232RJTAG_Exception("No device open.")
-
-		for n in range(7, -1, -1):
-			self.jtagClock((n == 0) & last, (val >> n) & 1)
-	
-	def readByte(self, val, last=True):
-		if self.handle is None:
-			raise FT232RJTAG_Exception("No device open.")
-
-		result = 0
-
-		for n in range(7, -1, -1):
-			bit = self.jtagClock((n == 0) & last, (val >> n) & 1)
-			result |= bit << (7 - n)
-
-		return result
+	#def sendByte(self, val, last=True):
+	#	for n in range(7, -1, -1):
+	#		self.jtagClock((n == 0) & last, (val >> n) & 1)
+	#
+	#def readByte(self, val, last=True):
+	#	result = 0
+	#
+	#	for n in range(7, -1, -1):
+	#		bit = self.jtagClock((n == 0) & last, (val >> n) & 1)
+	#		result |= bit << (7 - n)
+	#
+	#	return result
 
 	def parseByte(self, bits):
 		return (bits[7] << 7) | (bits[6] << 6) | (bits[5] << 5) | (bits[4] << 4) | (bits[3] << 3) | (bits[2] << 2) |  (bits[1] << 1) | bits[0]
 	
-	def tapReset(self):
-		for i in range(0, 6):
-			self.jtagClock(tms=1)
+	#def tapReset(self):
+	#	for i in range(0, 6):
+	#		self.jtagClock(tms=1)
 	
-	def readChain(self):
-		self.deviceCount = None
-		self.idcodes = None
-		self.irlengths = None
-
-		self._readDeviceCount()
-		self._readIdcodes()
-		self._processIdcodes()
+#	def readChain(self):
+#		self.deviceCount = None
+#		self.idcodes = None
+#		self.irlengths = None
+#
+#		self._readDeviceCount()
+#		self._readIdcodes()
+#		self._processIdcodes()
 	
 	def _readDeviceCount(self):
 		self.deviceCount = None
 
-		self.tapReset()
-		# Shift-IR
-		self.jtagClock(tms=0)
-		self.jtagClock(tms=1)
-		self.jtagClock(tms=1)
-		self.jtagClock(tms=0)
-		self.jtagClock(tms=0)
+		#self.tap.reset()
 
 		# Force BYPASS
-		for i in range(0, 100):	# TODO should be 1000
-			self.jtagClock(tms=0, tdi=1)
-		self.jtagClock(tms=1, tdi=1)
+		self.reset()
+		self.part(0)
 
-		# Shift-DR
-		self.jtagClock(tms=1, tdi=1)
-		self.jtagClock(tms=1, tdi=1)
-		self.jtagClock(tms=0, tdi=1)
-		self.jtagClock(tms=0, tdi=1)
+		# Force BYPASS
+		self.shift_ir()
+		#self.shiftIR([1]*100)	# Should be 1000
 
 		# Flush DR registers
-		for i in range(0, 100):
-			self.jtagClock(tms=0, tdi=0)
+		self.shift_dr([0]*100)
 
-		# Count the number of devices
-		for i in range(0, 100):
-			self.jtagClock(tms=0, tdi=1)
+		# Fill with 1s to detect chain length
+		data = self.read_dr([1]*100)
 
-		self.tapReset()
-
-		data = self.readTDO(106)
-
+		# Now see how many devices there were.
 		for i in range(0, 100):
 			if data[i] == 1:
 				self.deviceCount = i
 				break
 
-		if self.deviceCount is None:
+		if self.deviceCount is None or self.deviceCount == 0:
+			self.deviceCount = None
 			raise NoDevicesDetected()
 
 	
@@ -165,21 +219,11 @@ class JTAG(FT232R):
 
 		self.idcodes = []
 
-		self.tapReset()
+		#self.tap.reset()
+		self.reset()
+		self.part(0)
 
-		# Shift-DR
-		self.jtagClock(tms=0)
-		self.jtagClock(tms=1)
-		self.jtagClock(tms=0)
-		self.jtagClock(tms=0)
-
-		for d in range(0, self.deviceCount*32-1):
-			self.jtagClock(tms=0, tdi=1)
-		self.jtagClock(tms=1, tdi=1)
-
-		self.tapReset()
-
-		data = self.readTDO(self.deviceCount*32 + 6)
+		data = self.read_dr([1]*32*self.deviceCount)
 
 		for d in range(self.deviceCount):
 			idcode = self.parseByte(data[0:8])
@@ -217,83 +261,83 @@ class JTAG(FT232R):
 		print "Device ID: %.8X" % idcode
 		print "Manuf: %x, Part Size: %x, Family Code: %x, Revision: %0d" % (manuf, size, family, rev)
 	
-	def buildInstruction(self, deviceid, instruction):
-		if self.irlengths is None:
-			raise FT232RJTAG_Exception("IRLengths are unknown.")
-
-		result = []
-
-		for d in range(self.deviceCount - 1, -1, -1):
-			for i in range(0, self.irlengths[d]):
-				if d == deviceid:
-					result.append(instruction & 1)
-					instruction = instruction >> 1
-				else:
-					result.append(1)
-
-		return result
-	
-	# Load an instruction into a single device, BYPASSing the others.
-	# Leaves the TAP at IDLE.
-	def singleDeviceInstruction(self, deviceid, instruction):
-		self.tapReset()
-
-		self.jtagClock(tms=0)
-		self.jtagClock(tms=1)
-		self.jtagClock(tms=1)
-		self.jtagClock(tms=0)
-		self.jtagClock(tms=0)
-
-		bits = self.buildInstruction(deviceid, instruction)
-		#print bits, len(bits)
-		self.jtagWriteBits(bits, last=True)
-
-		self.jtagClock(tms=1)
-		self.jtagClock(tms=0)
+#	def buildInstruction(self, deviceid, instruction):
+#		if self.irlengths is None:
+#			raise FT232RJTAG_Exception("IRLengths are unknown.")
+#
+#		result = []
+#
+#		for d in range(self.deviceCount - 1, -1, -1):
+#			for i in range(0, self.irlengths[d]):
+#				if d == deviceid:
+#					result.append(instruction & 1)
+#					instruction = instruction >> 1
+#				else:
+#					result.append(1)
+#
+#		return result
+#	
+#	# Load an instruction into a single device, BYPASSing the others.
+#	# Leaves the TAP at IDLE.
+#	def singleDeviceInstruction(self, deviceid, instruction):
+#		self.tapReset()
+#
+#		self.jtagClock(tms=0)
+#		self.jtagClock(tms=1)
+#		self.jtagClock(tms=1)
+#		self.jtagClock(tms=0)
+#		self.jtagClock(tms=0)
+#
+#		bits = self.buildInstruction(deviceid, instruction)
+#		#print bits, len(bits)
+#		self.jtagWriteBits(bits, last=True)
+#
+#		self.jtagClock(tms=1)
+#		self.jtagClock(tms=0)
 	
 	# TODO: Currently assumes that deviceid is the last device in the chain.
 	# TODO: Assumes TAP is in IDLE state.
 	# Leaves the device in IDLE state.
-	def shiftDR(self, deviceid, bits):
-		self.jtagClock(tms=1)
-		self.jtagClock(tms=0)
-		self.jtagClock(tms=0)
-
-		readback = self.jtagWriteBits(bits, last=(self.deviceCount==1))
-		
-		for d in range(self.deviceCount-2):
-			self.jtagClock(tms=0)
-
-		if self.deviceCount > 1:
-			self.jtagClock(tms=1)
-
-		self.jtagClock(tms=1)
-		self.jtagClock(tms=0)
-
-		return readback
+	#def shiftDR(self, deviceid, bits):
+	#	self.jtagClock(tms=1)
+	#	self.jtagClock(tms=0)
+	#	self.jtagClock(tms=0)
+#
+#		readback = self.jtagWriteBits(bits, last=(self.deviceCount==1))
+#		
+#		for d in range(self.deviceCount-2):
+#			self.jtagClock(tms=0)
+#
+#		if self.deviceCount > 1:
+#			self.jtagClock(tms=1)
+#
+#		self.jtagClock(tms=1)
+#		self.jtagClock(tms=0)
+#
+#		return readback
 
 	# TODO: Perform in a single D2XX.Write call.
 	# TODO: ^ Be careful not to fill the RX buffer (128 bytes).
-	def jtagWriteBits(self, bits, last=False):
-		readback = []
-
-		for b in bits[:-1]:
-			readback.append(self.jtagClock(tdi=b, tms=0))
-		readback.append(self.jtagClock(tdi=bits[-1], tms=(last&1)))
-
-		return readback
-
-	# Read the Configuration STAT register
-	def sendJprogram(self, deviceid):
-		if self.handle is None or self.irlengths is None:
-			raise FT232RJTAG_Exception("IRLengths is None.")
-
-		self.singleDeviceInstruction(deviceid, 0xB)
-
-		self.tapReset()
-		self.tapReset()
-		self.tapReset()
-		self.tapReset()
+#	def jtagWriteBits(self, bits, last=False):
+#		readback = []
+#
+#		for b in bits[:-1]:
+#			readback.append(self.jtagClock(tdi=b, tms=0))
+#		readback.append(self.jtagClock(tdi=bits[-1], tms=(last&1)))
+#
+#		return readback
+#
+#	# Read the Configuration STAT register
+#	def sendJprogram(self, deviceid):
+#		if self.handle is None or self.irlengths is None:
+#			raise FT232RJTAG_Exception("IRLengths is None.")
+#
+#		self.singleDeviceInstruction(deviceid, 0xB)
+#
+#		self.tapReset()
+#		self.tapReset()
+#		self.tapReset()
+#		self.tapReset()
 
 
 
