@@ -1,5 +1,6 @@
 from jtag import JTAG
 
+
 with JTAG() as jtag:
 	jtag.open(0)
 
