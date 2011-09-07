@@ -5,6 +5,7 @@
 
 from ft232r import FT232R, FT232R_PortList
 from TAP import TAP
+import time
 
 
 class NoDevicesDetected(Exception): pass
@@ -85,6 +86,8 @@ class JTAG(FT232R):
 		self.tap.reset()
 	
 	def shift_ir(self):
+		print self.current_instructions
+
 		self.tap.goto(TAP.SELECT_IR)
 		self.tap.goto(TAP.SHIFT_IR)
 
@@ -94,6 +97,7 @@ class JTAG(FT232R):
 
 		self.tap.goto(TAP.IDLE)
 	
+	# TODO: Doesn't work correctly if not operating on the last device in the chain
 	def shift_dr(self, bits, read=False):
 		self.tap.goto(TAP.SELECT_DR)
 		self.tap.goto(TAP.SHIFT_DR)
@@ -108,10 +112,79 @@ class JTAG(FT232R):
 		self.tap.goto(TAP.IDLE)
 
 		if read:
-			return self.readTDO(len(bits)+self._tckcount)[:len(bits)]
+			return self.readTDO(len(bits)+self._tckcount)[:len(bits)-self.current_part]
 	
 	def read_dr(self, bits):
 		return self.shift_dr(bits, read=True)
+
+	# Clock TCK in the IDLE state for tckcount cycles
+	def runtest(self, tckcount):
+		self.tap.goto(TAP.IDLE)
+		for i in range(tckcount):
+			self.jtagClock(tms=0)
+	
+	# Use to shift lots of bytes into DR.
+	# TODO: Assumes current_part is the last device in the chain.
+	# TODO: Assumes data is MSB first.
+	def bulk_shift_dr(self, data, progressCallback=None):
+		self.tap.goto(TAP.SELECT_DR)
+		self.tap.goto(TAP.SHIFT_DR)
+		self.flush()
+		
+		bytetotal = len(data)
+
+		print "Pre processing..."
+		# Pre-process
+		# TODO: Some way to cache this...
+		chunk = ""
+		chunks = []
+		CHUNK_SIZE = 4096*4
+
+		for b in data[:-1]:
+			d = ord(b)
+			
+			for i in range(7, -1, -1):
+				x = (d >> i) & 1
+				chunk += self._formatJtagClock(tdi=x)
+
+			if len(chunk) >= CHUNK_SIZE:
+				chunks.append(chunk)
+				chunk = ""
+
+		last_bits = []
+		d = ord(data[-1])
+		for i in range(7, -1, -1):
+			last_bits.append((d >> i) & 1)
+
+		for i in range(self.current_part):
+			last_bits.append(0)
+
+		if len(chunk) > 0:
+			chunks.append(chunk)
+
+		print "Processed. Writing..."
+		self._setAsyncMode()
+		
+		written = 0
+		start_time = time.time()
+		
+		for chunk in chunks:
+			self.handle.write(chunk)
+			written += len(chunk) / 16
+
+			if (written % (16 * 1024)) == 0 and progressCallback:
+				progressCallback(start_time, written, bytetotal)
+
+		self._setSyncMode()
+		self._purgeBuffers()
+
+		for bit in last_bits[:-1]:
+			self.jtagClock(tdi=bit)
+		self.jtagClock(tdi=last_bits[-1], tms=1)
+
+		self.tap.goto(TAP.IDLE)
+		self.flush()
+
 	
 	def __enter__(self):
 		return self

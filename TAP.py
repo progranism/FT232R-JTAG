@@ -106,11 +106,13 @@ class TAP:
 			self.jtagClock(tms=0)
 			self.jtagClock(tms=0)
 		elif state == TAP.IDLE:
-			if self.state != TAP.EXIT1_DR and self.state != TAP.EXIT1_IR:
+			if self.state == TAP.IDLE:
+				self.jtagClock(tms=0)
+			elif self.state == TAP.EXIT1_DR or self.state == TAP.EXIT1_IR:
+				self.jtagClock(tms=1)
+				self.jtagClock(tms=0)
+			else:
 				raise TAPStateError(self.state, state)
-
-			self.jtagClock(tms=1)
-			self.jtagClock(tms=0)
 		else:
 			raise TAPStateError(self.state, state)
 
