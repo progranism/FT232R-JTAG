@@ -85,9 +85,7 @@ class JTAG(FT232R):
 		#self.shift_ir()
 		self.tap.reset()
 	
-	def shift_ir(self):
-		print self.current_instructions
-
+	def shift_ir(self, read=False):
 		self.tap.goto(TAP.SELECT_IR)
 		self.tap.goto(TAP.SHIFT_IR)
 
@@ -95,7 +93,14 @@ class JTAG(FT232R):
 			self.jtagClock(tdi=bit)
 		self.jtagClock(tdi=self.current_instructions[-1], tms=1)
 
+		self._tckcount = 0
 		self.tap.goto(TAP.IDLE)
+
+		if read:
+			return self.readTDO(len(self.current_instructions)+self._tckcount)[:-self._tckcount]
+	
+	def read_ir(self):
+		return self.shift_ir(read=True)
 	
 	# TODO: Doesn't work correctly if not operating on the last device in the chain
 	def shift_dr(self, bits, read=False):
@@ -130,6 +135,7 @@ class JTAG(FT232R):
 		self.tap.goto(TAP.SELECT_DR)
 		self.tap.goto(TAP.SHIFT_DR)
 		self.flush()
+		print self.handle.getQueueStatus()
 		
 		bytetotal = len(data)
 
@@ -163,20 +169,30 @@ class JTAG(FT232R):
 			chunks.append(chunk)
 
 		print "Processed. Writing..."
+		print self.handle.getQueueStatus()
 		self._setAsyncMode()
 		
 		written = 0
 		start_time = time.time()
 		
 		for chunk in chunks:
-			self.handle.write(chunk)
+			wrote = self.handle.write(chunk)
+			if wrote != len(chunk):
+				print "...THAT'S WEIRD!!! %i" % wrote
 			written += len(chunk) / 16
 
 			if (written % (16 * 1024)) == 0 and progressCallback:
 				progressCallback(start_time, written, bytetotal)
 
+		progressCallback(start_time, written, bytetotal)
+
+		print self.handle.getStatus()
+		print self.handle.getQueueStatus()
 		self._setSyncMode()
 		self._purgeBuffers()
+		print self.handle.getQueueStatus()
+
+		print self.handle.getStatus()
 
 		for bit in last_bits[:-1]:
 			self.jtagClock(tdi=bit)
@@ -184,6 +200,15 @@ class JTAG(FT232R):
 
 		self.tap.goto(TAP.IDLE)
 		self.flush()
+		print self.handle.getQueueStatus()
+		print self.handle.getStatus()
+		#self.handle.resetDevice()
+		#self._setSyncMode()
+		#self.close()
+		#self.open(0)
+		#self._setSyncMode()
+		#print self.handle.getQueueStatus()
+		#print self.handle.getStatus()
 
 	
 	def __enter__(self):

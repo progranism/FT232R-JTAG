@@ -85,34 +85,44 @@ with JTAG() as jtag:
 
 	jtag.flush()
 
+	#print ord(bitfile.bitstream[5000])
+	#bitfile.bitstream = bitfile.bitstream[0:5000] + chr(0x12) + bitfile.bitstream[5001:]
+
 	# Load bitstream into CFG_IN
 	jtag.bulk_shift_dr(bitfile.bitstream, bitstreamProgress)
 
 	# Load with JSTART
 	jtag.instruction(0x0C)
 	jtag.shift_ir()
+	print "a"
 
 	# Let the device start
 	jtag.runtest(24)
+	print "b"
 	
 	# Load with Bypass
 	jtag.instruction(0xFF)
 	jtag.shift_ir()
 	jtag.instruction(0xFF)
 	jtag.shift_ir()
+	print "c"
 
 	# Load with JSTART
 	jtag.instruction(0x0C)
 	jtag.shift_ir()
+	print "d"
 
 	jtag.runtest(24)
 
+	print "e"
+
 	# Check done pin
-	# TODO: jtag.instruction(0xFF)
-	# TODO: jtag.read_ir() & 0x20 == 0x21
-	# jtag.instruction(0xFF)
-	# jtag.shift_ir()
-	# jtag.shift_dr([0])
+	jtag.instruction(0xFF)
+	# TODO: Figure this part out. & 0x20 should equal 0x20 to check the DONE pin ... ???
+	print jtag.read_ir() # & 0x20 == 0x21
+	jtag.instruction(0xFF)
+	jtag.shift_ir()
+	jtag.shift_dr([0])
 
 	jtag.flush()
 	

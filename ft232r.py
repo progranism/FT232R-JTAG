@@ -1,6 +1,7 @@
 import d2xx
 import struct
 from TAP import TAP
+import time
 
 
 DEFAULT_FREQUENCY = 3000000
@@ -70,7 +71,7 @@ class FT232R:
 		if self.handle is None:
 			raise DeviceNotOpened()
 
-		self.handle.purge(1)
+		self.handle.purge(0)
 	
 	def _setBaudRate(self, rate):
 		self._log("Setting baudrate to %i" % rate)
@@ -138,6 +139,7 @@ class FT232R:
 
 		# Write all data that we don't care about.
 		if len(self.write_buffer) > 0:
+			print "Flushing out %i" % len(self.write_buffer)
 			self.flush()
 			self._purgeBuffers()
 
@@ -146,8 +148,16 @@ class FT232R:
 		while len(write_buffer) > 0:
 			written = min(len(write_buffer), 3072)
 
-			self.handle.write(write_buffer[:written])
+			print written
+			print len(write_buffer)
+			print "Wrote: ", self.handle.write(write_buffer[:written])
 			write_buffer = write_buffer[written:]
+			print self.handle.getStatus()
+			print self.handle.getQueueStatus()
+
+			while self.handle.getQueueStatus() < written:
+				time.sleep(1)
+				print self.handle.getQueueStatus()
 			read = self.handle.read(written)
 
 			for n in range(written/3):
