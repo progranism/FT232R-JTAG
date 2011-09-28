@@ -12,17 +12,37 @@ class DeviceNotOpened(Exception): pass
 
 # Information about which of the 8 GPIO pins to use.
 class FT232R_PortList:
-	def __init__(self, tck, tms, tdi, tdo):
-		self.tck = tck
-		self.tms = tms
-		self.tdi = tdi
-		self.tdo = tdo
+	def __init__(self, tck0, tms0, tdi0, tdo0, tck1, tms1, tdi1, tdo1):
+		self.tck0 = tck0
+		self.tms0 = tms0
+		self.tdi0 = tdi0
+		self.tdo0 = tdo0
+		self.tck1 = tck1
+		self.tms1 = tms1
+		self.tdi1 = tdi1
+		self.tdo1 = tdo1
 	
 	def output_mask(self):
-		return (1 << self.tck) | (1 << self.tms) | (1 << self.tdi)
+		return (1 << self.tck0) | (1 << self.tms0) | (1 << self.tdi0) | \
+		       (1 << self.tck1) | (1 << self.tms1) | (1 << self.tdi1)
 
-	def format(self, tck, tms, tdi):
-		return struct.pack('=c', chr(((tck&1) << self.tck) | ((tms&1) << self.tms) | ((tdi&1) << self.tdi)))
+	def format(self, tck, tms, tdi, chain=0):
+		# chain is the JTAG chain: 0 or 1, or 2 for both
+		if( chain == 0 ):
+			return struct.pack('=c', chr(((tck&1) << self.tck0) | 
+			                             ((tms&1) << self.tms0) | 
+			                             ((tdi&1) << self.tdi0)))
+		if( chain == 1 ):
+			return struct.pack('=c', chr(((tck&1) << self.tck1) | 
+			                             ((tms&1) << self.tms1) | 
+			                             ((tdi&1) << self.tdi1)))
+		if( chain == 2 ):
+			return struct.pack('=c', chr(((tck&1) << self.tck0) | 
+			                             ((tms&1) << self.tms0) | 
+			                             ((tdi&1) << self.tdi0) |
+			                             ((tck&1) << self.tck1) | 
+			                             ((tms&1) << self.tms1) | 
+			                             ((tdi&1) << self.tdi1)))
 
 
 class FT232R:
@@ -105,16 +125,16 @@ class FT232R:
 		self.handle.setBitMode(self.portlist.output_mask(), 1)
 		self.synchronous = False
 	
-	def _formatJtagState(self, tck, tms, tdi):
-		return self.portlist.format(tck, tms, tdi)
+	def _formatJtagState(self, tck, tms, tdi, chain=0):
+		return self.portlist.format(tck, tms, tdi, chain)
 
-	def jtagClock(self, tms=0, tdi=0):
+	def jtagClock(self, tms=0, tdi=0, chain=0):
 		if self.handle is None:
 			raise DeviceNotOpened()
 		
-		self.write_buffer += self._formatJtagState(0, tms, tdi)
-		self.write_buffer += self._formatJtagState(1, tms, tdi)
-		self.write_buffer += self._formatJtagState(1, tms, tdi)
+		self.write_buffer += self._formatJtagState(0, tms, tdi, chain)
+		self.write_buffer += self._formatJtagState(1, tms, tdi, chain)
+		self.write_buffer += self._formatJtagState(1, tms, tdi, chain)
 
 		self.tap.clocked(tms)
 		self._tckcount += 1
@@ -128,7 +148,7 @@ class FT232R:
 		self._purgeBuffers()
 	
 	# Read the last num bits of TDO.
-	def readTDO(self, num):
+	def readTDO(self, num, chain=0):
 		if num == 0:
 			flush()
 			return []
@@ -161,7 +181,10 @@ class FT232R:
 			read = self.handle.read(written)
 
 			for n in range(written/3):
-				bits.append((ord(read[n*3+2]) >> self.portlist.tdo)&1)
+				if( chain == 0 ):
+					bits.append((ord(read[n*3+2]) >> self.portlist.tdo0)&1)
+				elif( chain == 1 ):
+					bits.append((ord(read[n*3+2]) >> self.portlist.tdo1)&1)
 
 		return bits
 	
