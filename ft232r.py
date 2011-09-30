@@ -138,6 +138,12 @@ class FT232R:
 
 		self.tap.clocked(tms)
 		self._tckcount += 1
+
+	def jtagClock0(self, tms=0, tdi=0)
+		self.jtagClock(tms, tdi, 0)
+
+	def jtagClock1(self, tms=0, tdi=0)
+		self.jtagClock(tms, tdi, 1)
 	
 	def flush(self):
 		self._setAsyncMode()

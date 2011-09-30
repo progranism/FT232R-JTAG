@@ -11,6 +11,7 @@ import time
 class NoDevicesDetected(Exception): pass
 class IDCodesNotRead(Exception): pass
 class ChainNotProperlyDetected(Exception): pass
+class InvalidChain(Exception): pass
 
 class UnknownIDCode(Exception):
 	def __init__(self, idcode):
@@ -27,7 +28,7 @@ class UnknownIDCode(Exception):
 irlength_lut = {0x403d093: 6, 0x401d093: 6, 0x5057093: 16, 0x5059093: 16};
 
 class JTAG(FT232R):
-	def __init__(self):
+	def __init__(self, chain=0):
 		FT232R.__init__(self)
 
 		self.deviceCount = None
@@ -35,10 +36,22 @@ class JTAG(FT232R):
 		self.irlengths = None
 		self.current_instructions = [1] * 100	# Default is to put all possible devices into BYPASS. # TODO: Should be 1000
 		self.current_part = 0
+
+		self.chain = chain # do we really need to store this or is it enough to define jtagClock by it in the next line, and forget about it?
+		if( chain == 0 ):
+			self.jtagClock = FT232R.jtagClock0
+		elif( chain == 1 ):
+			self.jtagClock = FT232R.jtagClock1
+		else:
+			raise InvalidChain()
+
+		self.tap = TAP(self.jtagClock)
 	
 	# Call this first.
+	# TODO: If the device is opened twice (once for each chain), will 
+	#       it handle this gracefully?
 	def open(self, devicenum):
-		portlist = FT232R_PortList(3, 2, 1, 0)
+		portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 
 		FT232R.open(self, devicenum, portlist)
 	
