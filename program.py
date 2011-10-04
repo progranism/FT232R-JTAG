@@ -2,7 +2,6 @@ from jtag import JTAG
 from BitstreamReader import BitFile, BitFileReadError
 import time
 
-
 # LSB first
 def bits2int(bits):
 	x = 0
@@ -14,24 +13,27 @@ def bitstreamProgress(start_time, written, total):
 	print "Completed: ", str((written * 1000 / total) * 0.1), "%"
 	print str(written * 1.0 / (time.time() - start_time)), "B/s"
 
-
+# Dictionary for looking up idcodes:
+idcode_lut = {'6slx150fgg484': 0x401d093}
 
 ### Bitfile ###
-print "Reading BIT file..."
+bitfileName = 'bitstream/test_fpgaminer_top.bit'
+print "Opening bitstream file:", bitfileName
 bitfile = None
 
 try:
-	with open('bitstream/test_fpgaminer_top.bit', 'rb') as f:
+	with open(bitfileName, 'rb') as f:
 		bitfile = BitFile.read(f)
 except BitFileReadError, e:
 	print e
 	exit()
 
-print "Design Name:\t", bitfile.designname
-print "Part Name:\t", bitfile.part
-print "Date:\t", bitfile.date
-print "Time:\t", bitfile.time
-print "Bitstream Length:\t", len(bitfile.bitstream)
+print "Bitstream file opened:"
+print "      Design Name:", bitfile.designname
+print "        Part Name:", bitfile.part
+print "             Date:", bitfile.date
+print "             Time:", bitfile.time
+print " Bitstream Length:", len(bitfile.bitstream)
 print "\n"
 
 
@@ -57,7 +59,7 @@ with JTAG() as jtag:
 	# Verify the IDCODE
 	jtag.instruction(0x09)
 	jtag.shift_ir()
-	if bits2int(jtag.read_dr([0]*32)) & 0x0FFFFFFF != 0x0403d093:
+	if bits2int(jtag.read_dr([0]*32)) & 0x0FFFFFFF != idcode_lut[bitfile.part]:
 		print "ERROR: The specified firmware was not designed for the attached device."
 		exit()
 	
