@@ -1,6 +1,6 @@
 import d2xx
 import struct
-from TAP import TAP
+from jtag import JTAG
 import time
 
 
@@ -28,15 +28,15 @@ class FT232R_PortList:
 
 	def format(self, tck, tms, tdi, chain=0):
 		# chain is the JTAG chain: 0 or 1, or 2 for both
-		if( chain == 0 ):
+		if chain == 0:
 			return struct.pack('=c', chr(((tck&1) << self.tck0) | 
 			                             ((tms&1) << self.tms0) | 
 			                             ((tdi&1) << self.tdi0)))
-		if( chain == 1 ):
+		if chain == 1:
 			return struct.pack('=c', chr(((tck&1) << self.tck1) | 
 			                             ((tms&1) << self.tms1) | 
 			                             ((tdi&1) << self.tdi1)))
-		if( chain == 2 ):
+		if chain == 2:
 			return struct.pack('=c', chr(((tck&1) << self.tck0) | 
 			                             ((tms&1) << self.tms0) | 
 			                             ((tdi&1) << self.tdi0) |
@@ -47,13 +47,24 @@ class FT232R_PortList:
 
 class FT232R:
 	def __init__(self):
-		self.tap = TAP(self.jtagClock)
+		self.jtag = []
+		self.jtag.append(JTAG(self.jtagClock, self.readTDO))
+		self.jtag.append(JTAG(self.jtagClock, self.readTDO))
 		self.handle = None
 		self.debug = 0
 		self.synchronous = None
 		self.write_buffer = ""
 		self.portlist = None
 		self._tckcount = 0
+		
+	def __enter__(self):
+		return self
+
+	# Be sure to close the opened handle, if there is one.
+	# The device may become locked if we don't (requiring an unplug/plug cycle)
+	def __exit__(self, exc_type, exc_value, traceback):
+		self.close()
+		return False
 	
 	def _log(self, msg, level=1):
 		if level <= self.debug:
@@ -136,14 +147,14 @@ class FT232R:
 		self.write_buffer += self._formatJtagState(1, tms, tdi, chain)
 		self.write_buffer += self._formatJtagState(1, tms, tdi, chain)
 
-		self.tap.clocked(tms)
+		self.jtag[chain].tapClocked(tms)
 		self._tckcount += 1
-
-	def jtagClock0(self, tms=0, tdi=0)
-		self.jtagClock(tms, tdi, 0)
-
-	def jtagClock1(self, tms=0, tdi=0)
-		self.jtagClock(tms, tdi, 1)
+		
+	def jtagClock0(self, tms=0, tdi=0):
+		self.jtagClock(tms, tdi, chain=0)
+	
+	def jtagClock1(self, tms=0, tdi=0):
+		self.jtagClock(tms, tdi, chain=1)
 	
 	def flush(self):
 		self._setAsyncMode()
@@ -187,12 +198,18 @@ class FT232R:
 			read = self.handle.read(written)
 
 			for n in range(written/3):
-				if( chain == 0 ):
+				if chain == 0:
 					bits.append((ord(read[n*3+2]) >> self.portlist.tdo0)&1)
-				elif( chain == 1 ):
+				elif chain == 1:
 					bits.append((ord(read[n*3+2]) >> self.portlist.tdo1)&1)
 
 		return bits
+	
+	def readTDO0(self, num):
+		self.readTDO(num, chain=0)
+	
+	def readTDO1(self, num):
+		self.readTDO(num, chain=1)
 	
 #	def shiftIR(self, bits):
 #		self.tap.goto(TAP.SELECT_IR)

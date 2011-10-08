@@ -3,7 +3,6 @@
 # 	blah blah blah ...
 #
 
-from ft232r import FT232R, FT232R_PortList
 from TAP import TAP
 import time
 
@@ -25,35 +24,20 @@ class UnknownIDCode(Exception):
 # A dictionary, which allows us to look up a jtag device's IDCODE and see
 # how big its Instruction Register is (how many bits). This is entered manually
 # but could, in the future, be read automatically from a database of BSDL files.
-irlength_lut = {0x403d093: 6, 0x401d093: 6, 0x5057093: 16, 0x5059093: 16};
+irlength_lut = {0x403d093: 6, 0x401d093: 6, 0x4008093: 6, 0x5057093: 16, 0x5059093: 16};
 
-class JTAG(FT232R):
-	def __init__(self, chain=0):
-		FT232R.__init__(self)
+class JTAG():
+	def __init__(self, jtagClock, readTDO):
 
+		self.jtagClock = jtagClock
+		self.readTDO = readTDO
 		self.deviceCount = None
 		self.idcodes = None
 		self.irlengths = None
 		self.current_instructions = [1] * 100	# Default is to put all possible devices into BYPASS. # TODO: Should be 1000
 		self.current_part = 0
 
-		self.chain = chain # do we really need to store this or is it enough to define jtagClock by it in the next line, and forget about it?
-		if( chain == 0 ):
-			self.jtagClock = FT232R.jtagClock0
-		elif( chain == 1 ):
-			self.jtagClock = FT232R.jtagClock1
-		else:
-			raise InvalidChain()
-
 		self.tap = TAP(self.jtagClock)
-	
-	# Call this first.
-	# TODO: If the device is opened twice (once for each chain), will 
-	#       it handle this gracefully?
-	def open(self, devicenum):
-		portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
-
-		FT232R.open(self, devicenum, portlist)
 	
 	# Detect all devices on the JTAG chain. Call this after open.
 	def detect(self):
@@ -93,6 +77,7 @@ class JTAG(FT232R):
 		total_ir = 100 # TODO: Should be 1000
 		if self.irlengths is not None:
 			total_ir = sum(self.irlengths)
+			print "total_ir = ", total_ir
 
 		self.current_instructions = [1] * total_ir
 		#self.shift_ir()
@@ -101,6 +86,8 @@ class JTAG(FT232R):
 	def shift_ir(self, read=False):
 		self.tap.goto(TAP.SELECT_IR)
 		self.tap.goto(TAP.SHIFT_IR)
+		
+		print "current_instructions = ", self.current_instructions
 
 		for bit in self.current_instructions[:-1]:
 			self.jtagClock(tdi=bit)
@@ -121,6 +108,7 @@ class JTAG(FT232R):
 		self.tap.goto(TAP.SHIFT_DR)
 
 		bits += [0] * self.current_part
+		print "bits = ", bits
 
 		for bit in bits[:-1]:
 			self.jtagClock(tdi=bit)
@@ -130,7 +118,11 @@ class JTAG(FT232R):
 		self.tap.goto(TAP.IDLE)
 
 		if read:
-			return self.readTDO(len(bits)+self._tckcount)[:len(bits)-self.current_part]
+			r = self.readTDO(len(bits)+self._tckcount)
+			if r is not None:
+				return r[:len(bits)-self.current_part]
+			else:
+				return None
 	
 	def read_dr(self, bits):
 		return self.shift_dr(bits, read=True)
@@ -222,17 +214,6 @@ class JTAG(FT232R):
 		#self._setSyncMode()
 		#print self.handle.getQueueStatus()
 		#print self.handle.getStatus()
-
-	
-	def __enter__(self):
-		return self
-
-	# Be sure to close the opened handle, if there is one.
-	# The device may become locked if we don't (requiring an unplug/plug cycle)
-	def __exit__(self, exc_type, exc_value, traceback):
-		self.close()
-
-		return False
 	
 	# Run a stress test of the JTAG chain to make sure communications
 	# will run properly.
@@ -260,6 +241,9 @@ class JTAG(FT232R):
 
 	def _formatJtagClock(self, tms=0, tdi=0):
 		return self._formatJtagState(0, tms, tdi) + self._formatJtagState(1, tms, tdi)
+		
+	def tapClocked(self, tms):
+		self.tap.clocked(tms)
 
 	# TODO: Why is the data sent backwards!?!?!
 	# NOTE: It seems that these are designed specifically for Xilinx's
@@ -312,6 +296,7 @@ class JTAG(FT232R):
 
 		# Fill with 1s to detect chain length
 		data = self.read_dr([1]*100)
+		print "data = ", data
 
 		# Now see how many devices there were.
 		for i in range(0, 100):

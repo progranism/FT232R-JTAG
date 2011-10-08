@@ -9,7 +9,7 @@ def safe_read(handle, count):
 	return handle.read(count)
 
 
-print "Openning"
+print "Opening"
 handle = d2xx.open(0)
 handle.setBitMode(0x0F, 0)
 handle.setBitMode(0x0F, 4)
