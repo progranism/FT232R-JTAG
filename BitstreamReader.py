@@ -16,6 +16,8 @@
 # The last field is the raw bitstream.
 #
 
+# Dictionary for looking up idcodes from device names:
+idcode_lut = {'6slx150fgg484': 0x401d093, '6slx45csg324': 0x4008093}
 
 class BitFileReadError(Exception):
 	_corruptFileMessage = "Unable to parse .bit file; header is malformed. Is it really a Xilinx .bit file?"
@@ -41,6 +43,7 @@ class BitFile:
 		bitfile.part = BitFile._readField(filestream, 'b').rstrip('\0')
 		bitfile.date = BitFile._readField(filestream, 'c').rstrip('\0')
 		bitfile.time = BitFile._readField(filestream, 'd').rstrip('\0')
+		bitfile.idcode = idcode_lut[bitfile.part]
 
 		if BitFile._readOrDie(filestream, 1) != 'e':
 			raise BitFileReadError()

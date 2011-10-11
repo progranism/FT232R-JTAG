@@ -18,16 +18,13 @@ class UnknownIDCode(Exception):
 	def __str__(self):
 		return repr(self.idcode)
 
-
-
-
 # A dictionary, which allows us to look up a jtag device's IDCODE and see
 # how big its Instruction Register is (how many bits). This is entered manually
 # but could, in the future, be read automatically from a database of BSDL files.
 irlength_lut = {0x403d093: 6, 0x401d093: 6, 0x4008093: 6, 0x5057093: 16, 0x5059093: 16};
 
 class JTAG():
-	def __init__(self, ft232r, chain):
+	def __init__(self, ft232r, portlist, chain):
 		self.ft232r = ft232r
 		self.chain = chain
 		self.deviceCount = None
@@ -35,6 +32,8 @@ class JTAG():
 		self.irlengths = None
 		self.current_instructions = [1] * 100	# Default is to put all possible devices into BYPASS. # TODO: Should be 1000
 		self.current_part = 0
+		self._tckcount = 0
+		self.portlist = portlist
 
 		self.tap = TAP(self.jtagClock)
 	
@@ -96,7 +95,7 @@ class JTAG():
 		self.tap.goto(TAP.IDLE)
 
 		if read:
-			return self.ft232r.readTDO(len(self.current_instructions)+self._tckcount)[:-self._tckcount]
+			return self.read_tdo(len(self.current_instructions)+self._tckcount)[:-self._tckcount]
 	
 	def read_ir(self):
 		return self.shift_ir(read=True)
@@ -117,11 +116,19 @@ class JTAG():
 		self.tap.goto(TAP.IDLE)
 
 		if read:
-			return self.ft232r.readTDO(len(bits)+self._tckcount)[:len(bits)-self.current_part]
+			return self.read_tdo(len(bits)+self._tckcount)[:len(bits)-self.current_part]
 	
 	def read_dr(self, bits):
 		return self.shift_dr(bits, read=True)
-
+		
+	def read_tdo(self, num):
+		data = self.ft232r.read_data(num)
+		bits = []
+		for n in range(num/3):
+			bits.append((ord(data[n*3+2]) >> self.portlist.tdo)&1)
+		
+		return bits
+	
 	# Clock TCK in the IDLE state for tckcount cycles
 	def runtest(self, tckcount):
 		self.tap.goto(TAP.IDLE)
@@ -272,15 +279,6 @@ class JTAG():
 	#	for i in range(0, 6):
 	#		self.jtagClock(tms=1)
 	
-#	def readChain(self):
-#		self.deviceCount = None
-#		self.idcodes = None
-#		self.irlengths = None
-#
-#		self._readDeviceCount()
-#		self._readIdcodes()
-#		self._processIdcodes()
-	
 	def _readDeviceCount(self):
 		self.deviceCount = None
 
@@ -299,10 +297,10 @@ class JTAG():
 
 		# Fill with 1s to detect chain length
 		data = self.read_dr([1]*100)
-		print "data = ", data
+		print "_readDeviceCount: data = ", data
 
 		# Now see how many devices there were.
-		for i in range(0, 100):
+		for i in range(0, len(data)-1):
 			if data[i] == 1:
 				self.deviceCount = i
 				break

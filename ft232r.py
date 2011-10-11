@@ -3,13 +3,10 @@ import struct
 from jtag import JTAG
 import time
 
-
 DEFAULT_FREQUENCY = 3000000
-
 
 class DeviceNotOpened(Exception): pass
 class InvalidChain(Exception): pass
-
 
 # Information about which of the 8 GPIO pins to use.
 class FT232R_PortList:
@@ -47,9 +44,9 @@ class FT232R_PortList:
 	
 	def chain_portlist(self, chain=0):
 		if chain == 0:
-			return tck0, tms0, tdi0, tdo0
+			return JTAG_PortList(self.tck0, self.tms0, self.tdi0, self.tdo0)
 		elif chain == 1:
-			return tck1, tms1, tdi1, tdo1
+			return JTAG_PortList(self.tck1, self.tms1, self.tdi1, self.tdo1)
 		else:
 			raise InvalidChain()
 
@@ -74,7 +71,6 @@ class FT232R:
 		self.synchronous = None
 		self.write_buffer = ""
 		self.portlist = None
-		self._tckcount = 0
 		
 	def __enter__(self): 
 		return self
@@ -164,7 +160,9 @@ class FT232R:
 		self._purgeBuffers()
 	
 	# Read the last num bits of TDO.
-	def readTDO(self, num, chain=0):
+	def read_data(self, num):
+		self._log("Reading %d bits." % num)
+		
 		if num == 0:
 			flush()
 			return []
@@ -175,62 +173,29 @@ class FT232R:
 
 		# Write all data that we don't care about.
 		if len(self.write_buffer) > 0:
-			print "Flushing out %i" % len(self.write_buffer)
+			print "Flushing out", len(self.write_buffer)
 			self.flush()
 			self._purgeBuffers()
 
-		bits = []
+		data = []
 
 		while len(write_buffer) > 0:
 			written = min(len(write_buffer), 3072)
 			
-			print written
-			print len(write_buffer)
-			print "Wrote: ", self.handle.write(write_buffer[:written])
+			print "written:", written
+			print "len(write_buffer):", len(write_buffer)
+			print "Wrote:", self.handle.write(write_buffer[:written])
 			write_buffer = write_buffer[written:]
-			print self.handle.getStatus()
-			print self.handle.getQueueStatus()
+			print "getStatus():", self.handle.getStatus()
+			print "getQueueStatus():", self.handle.getQueueStatus()
 			
 			while self.handle.getQueueStatus() < written:
 				time.sleep(1)
-				print self.handle.getQueueStatus()
-			read = self.handle.read(written)
+				print "getQueueStatus():", self.handle.getQueueStatus()
 			
-			for n in range(written/3):
-				if chain == 0:
-					bits.append((ord(read[n*3+2]) >> self.portlist.tdo0)&1)
-				elif chain == 1:
-					bits.append((ord(read[n*3+2]) >> self.portlist.tdo1)&1)
+			data.extend(self.handle.read(written))
 		
-		return bits
-	
-#	def shiftIR(self, bits):
-#		self.tap.goto(TAP.SELECT_IR)
-#		self.tap.goto(TAP.SHIFT_IR)
-#
-#		for bit in bits[:-1]:
-#			self.jtagClock(tdi=bit)
-#		self.jtagClock(tdi=bits[-1], tms=1)
-#
-#		self.tap.goto(TAP.IDLE)
-#	
-#	def shiftDR(self, bits, read=False):
-#		self.tap.goto(TAP.SELECT_DR)
-#		self.tap.goto(TAP.SHIFT_DR)
-#
-#		for bit in bits[:-1]:
-#			self.jtagClock(tdi=bit)
-#		self.jtagClock(tdi=bits[-1], tms=1)
-#
-#		t1 = self.tckcount
-#		self.tap.goto(TAP.IDLE)
-#
-#		if read:
-#			return self.readTDO(len(bits)+self.tckcount-t1)[:len(bits)]
-#	
-#	def readDR(self, bits):
-#		return self.shiftDR(bits, True)
-
+		return data
 
 	
 	

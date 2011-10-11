@@ -15,12 +15,10 @@ def bitstreamProgress(start_time, written, total):
 	print "Completed: ", str((written * 1000 / total) * 0.1), "%"
 	print str(written * 1.0 / (time.time() - start_time)), "B/s"
 
-# Dictionary for looking up idcodes from device names:
-idcode_lut = {'6slx150fgg484': 0x401d093}
 
 # Option parsing:
-parser = OptionParser(usage="%prog [-d <device>] [-c <chain>] <path-to-bitstream-file>")
-parser.add_option("-d", "--device", type="int", dest="device", default=0,
+parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] <path-to-bitstream-file>")
+parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
                   help="Device number, default 0 (only needed if you have more than one board)")
 parser.add_option("-c", "--chain", type="int", dest="chain", default=0,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 0)")
@@ -54,12 +52,12 @@ print ""
 
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
-	ft232r.open(settings.device, portlist)
+	ft232r.open(settings.devicenum, portlist)
 	
 	# TODO: make it program both FPGAs when settings.chain == 2
 	if settings.chain == 0 or settings.chain == 1:
-		jtag = JTAG(ft232r, settings.chain)
-		print "Discovering JTAG chain %d ..." % chain
+		jtag = JTAG(ft232r, portlist.chain_portlist(settings.chain), settings.chain)
+		print "Discovering JTAG chain %d ..." % settings.chain
 		jtag.detect()
 		
 		print "Found %i devices ...\n" % jtag.deviceCount
@@ -77,7 +75,7 @@ with FT232R() as ft232r:
 		# Verify the IDCODE
 		jtag.instruction(0x09)
 		jtag.shift_ir()
-		if bits2int(jtag.read_dr([0]*32)) & 0x0FFFFFFF != idcode_lut[bitfile.part]:
+		if bits2int(jtag.read_dr([0]*32))  & 0x0FFFFFFF != bitfile.idcode:
 			print "ERROR: The specified firmware was not designed for the attached device."
 			exit()
 		

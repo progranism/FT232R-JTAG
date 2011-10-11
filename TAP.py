@@ -47,7 +47,7 @@ class TAP:
 	def __init__(self, jtagClock):
 		self.jtagClock = jtagClock
 		self.state = None
-		self.debug = 1
+		self.debug = 0
 	
 	def reset(self):
 		for i in range(6):
