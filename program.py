@@ -12,8 +12,7 @@ def bits2int(bits):
 	return x
 
 def bitstreamProgress(start_time, written, total):
-	print "Completed: ", str((written * 1000 / total) * 0.1), "%"
-	print str(written * 1.0 / (time.time() - start_time)), "B/s"
+	print "Completed: %.1f, %d B/s" % ((written * 1000 / total) * 0.1, written * 1.0 / (time.time() - start_time))
 
 
 # Option parsing:
@@ -101,7 +100,7 @@ with FT232R() as ft232r:
 		jtag.instruction(0x05)
 		jtag.shift_ir()
 
-		jtag.flush()
+		ft232r.flush()
 
 		#print ord(bitfile.bitstream[5000])
 		#bitfile.bitstream = bitfile.bitstream[0:5000] + chr(0x12) + bitfile.bitstream[5001:]

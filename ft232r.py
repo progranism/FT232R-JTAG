@@ -194,6 +194,8 @@ class FT232R:
 				print "getQueueStatus():", self.handle.getQueueStatus()
 			
 			data.extend(self.handle.read(written))
+			
+		self._log("Read %d bits." % len(data))
 		
 		return data
 

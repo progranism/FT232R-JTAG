@@ -49,7 +49,7 @@ class JTAG():
 
 		self.reset()
 		self.part(0)
-		self.flush()
+		self.ft232r.flush()
 	
 	# Change the active part.
 	def part(self, part):
@@ -123,8 +123,9 @@ class JTAG():
 		
 	def read_tdo(self, num):
 		data = self.ft232r.read_data(num)
+		print "read_tdo(%d): len(data) = %d" % (num, len(data))
 		bits = []
-		for n in range(num/3):
+		for n in range(len(data)/3):
 			bits.append((ord(data[n*3+2]) >> self.portlist.tdo)&1)
 		
 		return bits
@@ -297,7 +298,7 @@ class JTAG():
 
 		# Fill with 1s to detect chain length
 		data = self.read_dr([1]*100)
-		print "_readDeviceCount: data = ", data
+		print "_readDeviceCount: len(data):", len(data)
 
 		# Now see how many devices there were.
 		for i in range(0, len(data)-1):
@@ -321,6 +322,8 @@ class JTAG():
 		self.part(0)
 
 		data = self.read_dr([1]*32*self.deviceCount)
+		
+		print "_readIdcodes: len(data):", len(data)
 
 		for d in range(self.deviceCount):
 			idcode = self.parseByte(data[0:8])
