@@ -27,10 +27,9 @@ class UnknownIDCode(Exception):
 irlength_lut = {0x403d093: 6, 0x401d093: 6, 0x4008093: 6, 0x5057093: 16, 0x5059093: 16};
 
 class JTAG():
-	def __init__(self, jtagClock, readTDO):
-
-		self.jtagClock = jtagClock
-		self.readTDO = readTDO
+	def __init__(self, ft232r, chain):
+		self.ft232r = ft232r
+		self.chain = chain
 		self.deviceCount = None
 		self.idcodes = None
 		self.irlengths = None
@@ -97,7 +96,7 @@ class JTAG():
 		self.tap.goto(TAP.IDLE)
 
 		if read:
-			return self.readTDO(len(self.current_instructions)+self._tckcount)[:-self._tckcount]
+			return self.ft232r.readTDO(len(self.current_instructions)+self._tckcount)[:-self._tckcount]
 	
 	def read_ir(self):
 		return self.shift_ir(read=True)
@@ -118,11 +117,7 @@ class JTAG():
 		self.tap.goto(TAP.IDLE)
 
 		if read:
-			r = self.readTDO(len(bits)+self._tckcount)
-			if r is not None:
-				return r[:len(bits)-self.current_part]
-			else:
-				return None
+			return self.ft232r.readTDO(len(bits)+self._tckcount)[:len(bits)-self.current_part]
 	
 	def read_dr(self, bits):
 		return self.shift_dr(bits, read=True)
@@ -139,8 +134,8 @@ class JTAG():
 	def bulk_shift_dr(self, data, progressCallback=None):
 		self.tap.goto(TAP.SELECT_DR)
 		self.tap.goto(TAP.SHIFT_DR)
-		self.flush()
-		print self.handle.getQueueStatus()
+		self.ft232r.flush()
+		print self.ft232r.handle.getQueueStatus()
 		
 		bytetotal = len(data)
 
@@ -174,14 +169,14 @@ class JTAG():
 			chunks.append(chunk)
 
 		print "Processed. Writing..."
-		print self.handle.getQueueStatus()
-		self._setAsyncMode()
+		print self.ft232r.handle.getQueueStatus()
+		self.ft232r._setAsyncMode()
 		
 		written = 0
 		start_time = time.time()
 		
 		for chunk in chunks:
-			wrote = self.handle.write(chunk)
+			wrote = self.ft232r.handle.write(chunk)
 			if wrote != len(chunk):
 				print "...THAT'S WEIRD!!! %i" % wrote
 			written += len(chunk) / 16
@@ -191,22 +186,22 @@ class JTAG():
 
 		progressCallback(start_time, written, bytetotal)
 
-		print self.handle.getStatus()
-		print self.handle.getQueueStatus()
-		self._setSyncMode()
-		self._purgeBuffers()
-		print self.handle.getQueueStatus()
+		print self.ft232r.handle.getStatus()
+		print self.ft232r.handle.getQueueStatus()
+		self.ft232r._setSyncMode()
+		self.ft232r._purgeBuffers()
+		print self.ft232r.handle.getQueueStatus()
 
-		print self.handle.getStatus()
+		print self.ft232r.handle.getStatus()
 
 		for bit in last_bits[:-1]:
 			self.jtagClock(tdi=bit)
 		self.jtagClock(tdi=last_bits[-1], tms=1)
 
 		self.tap.goto(TAP.IDLE)
-		self.flush()
-		print self.handle.getQueueStatus()
-		print self.handle.getStatus()
+		self.ft232r.flush()
+		print self.ft232r.handle.getQueueStatus()
+		print self.ft232r.handle.getStatus()
 		#self.handle.resetDevice()
 		#self._setSyncMode()
 		#self.close()
@@ -241,9 +236,17 @@ class JTAG():
 
 	def _formatJtagClock(self, tms=0, tdi=0):
 		return self._formatJtagState(0, tms, tdi) + self._formatJtagState(1, tms, tdi)
-		
-	def tapClocked(self, tms):
+	
+	def _formatJtagState(self, tck, tms, tdi):
+		return self.portlist.format(tck, tms, tdi)
+
+	def jtagClock(self, tms=0, tdi=0):		
+		self.ft232r.write_buffer += self._formatJtagState(0, tms, tdi)
+		self.ft232r.write_buffer += self._formatJtagState(1, tms, tdi)
+		self.ft232r.write_buffer += self._formatJtagState(1, tms, tdi)
+
 		self.tap.clocked(tms)
+		self._tckcount += 1
 
 	# TODO: Why is the data sent backwards!?!?!
 	# NOTE: It seems that these are designed specifically for Xilinx's

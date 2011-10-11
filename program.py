@@ -15,7 +15,7 @@ def bitstreamProgress(start_time, written, total):
 	print "Completed: ", str((written * 1000 / total) * 0.1), "%"
 	print str(written * 1.0 / (time.time() - start_time)), "B/s"
 
-# Dictionary for looking up idcodes:
+# Dictionary for looking up idcodes from device names:
 idcode_lut = {'6slx150fgg484': 0x401d093}
 
 # Option parsing:
@@ -55,95 +55,94 @@ print ""
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 	ft232r.open(settings.device, portlist)
-	jtag = ft232r.jtag
 	
 	# TODO: make it program both FPGAs when settings.chain == 2
 	if settings.chain == 0 or settings.chain == 1:
-		chain = settings.chain
+		jtag = JTAG(ft232r, settings.chain)
 		print "Discovering JTAG chain %d ..." % chain
-		jtag[chain].detect()
+		jtag.detect()
 		
-		print "Found %i devices ...\n" % jtag[chain].deviceCount
+		print "Found %i devices ...\n" % jtag.deviceCount
 
-		for idcode in jtag[chain].idcodes:
+		for idcode in jtag.idcodes:
 			JTAG.decodeIdcode(idcode)
 		
 		print ""
 		print "Beginning programming..."
 		
 		# Select the device
-		jtag[chain].reset()
-		jtag[chain].part(jtag.deviceCount-1)
+		jtag.reset()
+		jtag.part(jtag.deviceCount-1)
 		
 		# Verify the IDCODE
-		jtag[chain].instruction(0x09)
-		jtag[chain].shift_ir()
-		if bits2int(jtag[chain].read_dr([0]*32)) & 0x0FFFFFFF != idcode_lut[bitfile.part]:
+		jtag.instruction(0x09)
+		jtag.shift_ir()
+		if bits2int(jtag.read_dr([0]*32)) & 0x0FFFFFFF != idcode_lut[bitfile.part]:
 			print "ERROR: The specified firmware was not designed for the attached device."
 			exit()
 		
 		# Load with BYPASS
-		jtag[chain].instruction(0xFF)
-		jtag[chain].shift_ir()
+		jtag.instruction(0xFF)
+		jtag.shift_ir()
 
 		# Load with JPROGRAM
-		jtag[chain].instruction(0x0B)
-		jtag[chain].shift_ir()
+		jtag.instruction(0x0B)
+		jtag.shift_ir()
 
 		# Load with CFG_IN
-		jtag[chain].instruction(0x05)
-		jtag[chain].shift_ir()
+		jtag.instruction(0x05)
+		jtag.shift_ir()
 
 		# Clock TCK for 10000 cycles
-		jtag[chain].runtest(10000)
+		jtag.runtest(10000)
 
 		# Load with CFG_IN
-		jtag[chain].instruction(0x05)
-		jtag[chain].shift_ir()
-		jtag[chain].shift_dr([0]*32)
-		jtag[chain].instruction(0x05)
-		jtag[chain].shift_ir()
+		jtag.instruction(0x05)
+		jtag.shift_ir()
+		jtag.shift_dr([0]*32)
+		jtag.instruction(0x05)
+		jtag.shift_ir()
 
-		jtag[chain].flush()
+		jtag.flush()
 
 		#print ord(bitfile.bitstream[5000])
 		#bitfile.bitstream = bitfile.bitstream[0:5000] + chr(0x12) + bitfile.bitstream[5001:]
 
 		# Load bitstream into CFG_IN
-		jtag[chain].bulk_shift_dr(bitfile.bitstream, bitstreamProgress)
+		jtag.bulk_shift_dr(bitfile.bitstream, bitstreamProgress)
 
 		# Load with JSTART
-		jtag[chain].instruction(0x0C)
-		jtag[chain].shift_ir()
+		jtag.instruction(0x0C)
+		jtag.shift_ir()
 		print "a"
 
 		# Let the device start
-		jtag[chain].runtest(24)
+		jtag.runtest(24)
 		print "b"
 		
 		# Load with Bypass
-		jtag[chain].instruction(0xFF)
-		jtag[chain].shift_ir()
-		jtag[chain].instruction(0xFF)
-		jtag[chain].shift_ir()
+		jtag.instruction(0xFF)
+		jtag.shift_ir()
+		jtag.instruction(0xFF)
+		jtag.shift_ir()
 		print "c"
 
 		# Load with JSTART
-		jtag[chain].instruction(0x0C)
-		jtag[chain].shift_ir()
+		jtag.instruction(0x0C)
+		jtag.shift_ir()
 		print "d"
 
-		jtag[chain].runtest(24)
+		jtag.runtest(24)
 
 		print "e"
 
 		# Check done pin
-		jtag[chain].instruction(0xFF)
+		jtag.instruction(0xFF)
 		# TODO: Figure this part out. & 0x20 should equal 0x20 to check the DONE pin ... ???
-		print jtag[chain].read_ir() # & 0x20 == 0x21
-		jtag[chain].instruction(0xFF)
-		jtag[chain].shift_ir()
-		jtag[chain].shift_dr([0])
+		print jtag.read_ir() # & 0x20 == 0x21
+		jtag.instruction(0xFF)
+		jtag.shift_ir()
+		jtag.shift_dr([0])
 
-		jtag[chain].flush()
+		jtag.flush()
 		

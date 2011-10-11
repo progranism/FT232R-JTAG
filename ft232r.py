@@ -8,6 +8,7 @@ DEFAULT_FREQUENCY = 3000000
 
 
 class DeviceNotOpened(Exception): pass
+class InvalidChain(Exception): pass
 
 
 # Information about which of the 8 GPIO pins to use.
@@ -43,21 +44,39 @@ class FT232R_PortList:
 			                             ((tck&1) << self.tck1) | 
 			                             ((tms&1) << self.tms1) | 
 			                             ((tdi&1) << self.tdi1)))
+	
+	def chain_portlist(self, chain=0):
+		if chain == 0:
+			return tck0, tms0, tdi0, tdo0
+		elif chain == 1:
+			return tck1, tms1, tdi1, tdo1
+		else:
+			raise InvalidChain()
+
+
+class JTAG_PortList:
+	def __init__(self, tck, tms, tdi, tdo):
+		self.tck = tck
+		self.tms = tms
+		self.tdi = tdi
+		self.tdo = tdo
+	
+	def format(self, tck, tms, tdi):
+		return struct.pack('=c', chr(((tck&1) << self.tck) | 
+		                             ((tms&1) << self.tms) | 
+		                             ((tdi&1) << self.tdi)))
 
 
 class FT232R:
 	def __init__(self):
-		self.jtag = []
-		self.jtag.append(JTAG(self.jtagClock, self.readTDO))
-		self.jtag.append(JTAG(self.jtagClock, self.readTDO))
 		self.handle = None
-		self.debug = 0
+		self.debug = 1
 		self.synchronous = None
 		self.write_buffer = ""
 		self.portlist = None
 		self._tckcount = 0
 		
-	def __enter__(self):
+	def __enter__(self): 
 		return self
 
 	# Be sure to close the opened handle, if there is one.
@@ -136,26 +155,6 @@ class FT232R:
 		self.handle.setBitMode(self.portlist.output_mask(), 1)
 		self.synchronous = False
 	
-	def _formatJtagState(self, tck, tms, tdi, chain=0):
-		return self.portlist.format(tck, tms, tdi, chain)
-
-	def jtagClock(self, tms=0, tdi=0, chain=0):
-		if self.handle is None:
-			raise DeviceNotOpened()
-		
-		self.write_buffer += self._formatJtagState(0, tms, tdi, chain)
-		self.write_buffer += self._formatJtagState(1, tms, tdi, chain)
-		self.write_buffer += self._formatJtagState(1, tms, tdi, chain)
-
-		self.jtag[chain].tapClocked(tms)
-		self._tckcount += 1
-		
-	def jtagClock0(self, tms=0, tdi=0):
-		self.jtagClock(tms, tdi, chain=0)
-	
-	def jtagClock1(self, tms=0, tdi=0):
-		self.jtagClock(tms, tdi, chain=1)
-	
 	def flush(self):
 		self._setAsyncMode()
 		while len(self.write_buffer) > 0:
@@ -184,32 +183,26 @@ class FT232R:
 
 		while len(write_buffer) > 0:
 			written = min(len(write_buffer), 3072)
-
+			
 			print written
 			print len(write_buffer)
 			print "Wrote: ", self.handle.write(write_buffer[:written])
 			write_buffer = write_buffer[written:]
 			print self.handle.getStatus()
 			print self.handle.getQueueStatus()
-
+			
 			while self.handle.getQueueStatus() < written:
 				time.sleep(1)
 				print self.handle.getQueueStatus()
 			read = self.handle.read(written)
-
+			
 			for n in range(written/3):
 				if chain == 0:
 					bits.append((ord(read[n*3+2]) >> self.portlist.tdo0)&1)
 				elif chain == 1:
 					bits.append((ord(read[n*3+2]) >> self.portlist.tdo1)&1)
-
+		
 		return bits
-	
-	def readTDO0(self, num):
-		self.readTDO(num, chain=0)
-	
-	def readTDO1(self, num):
-		self.readTDO(num, chain=1)
 	
 #	def shiftIR(self, bits):
 #		self.tap.goto(TAP.SELECT_IR)
