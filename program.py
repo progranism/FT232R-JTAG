@@ -134,12 +134,12 @@ with FT232R() as ft232r:
 		print "e"
 
 		# Check done pin
-		jtag.instruction(0xFF)
+#		jtag.instruction(0xFF)
 		# TODO: Figure this part out. & 0x20 should equal 0x20 to check the DONE pin ... ???
-		print jtag.read_ir() # & 0x20 == 0x21
-		jtag.instruction(0xFF)
-		jtag.shift_ir()
-		jtag.shift_dr([0])
+#		print jtag.read_ir() # & 0x20 == 0x21
+#		jtag.instruction(0xFF)
+#		jtag.shift_ir()
+#		jtag.shift_dr([0])
 
 		jtag.flush()
 		

@@ -11,6 +11,7 @@ class NoDevicesDetected(Exception): pass
 class IDCodesNotRead(Exception): pass
 class ChainNotProperlyDetected(Exception): pass
 class InvalidChain(Exception): pass
+class WriteError(Exception): pass
 
 class UnknownIDCode(Exception):
 	def __init__(self, idcode):
@@ -34,8 +35,13 @@ class JTAG():
 		self.current_part = 0
 		self._tckcount = 0
 		self.portlist = portlist
+		self.debug = 0
 
 		self.tap = TAP(self.jtagClock)
+	
+	def _log(self, msg, level=1):
+		if level <= self.debug:
+			print "  JTAG:", msg
 	
 	# Detect all devices on the JTAG chain. Call this after open.
 	def detect(self):
@@ -69,13 +75,12 @@ class JTAG():
 			else:
 				self.current_instructions[i] = 1
 
-
 	# Reset JTAG chain
 	def reset(self):
 		total_ir = 100 # TODO: Should be 1000
 		if self.irlengths is not None:
 			total_ir = sum(self.irlengths)
-			print "total_ir = ", total_ir
+			self._log("total_ir = " + total_ir, 2)
 
 		self.current_instructions = [1] * total_ir
 		#self.shift_ir()
@@ -85,7 +90,7 @@ class JTAG():
 		self.tap.goto(TAP.SELECT_IR)
 		self.tap.goto(TAP.SHIFT_IR)
 		
-		print "current_instructions = ", self.current_instructions
+		self._log("current_instructions = " + self.current_instructions, 2)
 
 		for bit in self.current_instructions[:-1]:
 			self.jtagClock(tdi=bit)
@@ -106,7 +111,6 @@ class JTAG():
 		self.tap.goto(TAP.SHIFT_DR)
 
 		bits += [0] * self.current_part
-		print "bits = ", bits
 
 		for bit in bits[:-1]:
 			self.jtagClock(tdi=bit)
@@ -123,7 +127,7 @@ class JTAG():
 		
 	def read_tdo(self, num):
 		data = self.ft232r.read_data(num)
-		print "read_tdo(%d): len(data) = %d" % (num, len(data))
+		self._log("read_tdo(%d): len(data) = %d" % (num, len(data)), 2)
 		bits = []
 		for n in range(len(data)/3):
 			bits.append((ord(data[n*3+2]) >> self.portlist.tdo)&1)
@@ -143,7 +147,6 @@ class JTAG():
 		self.tap.goto(TAP.SELECT_DR)
 		self.tap.goto(TAP.SHIFT_DR)
 		self.ft232r.flush()
-		print self.ft232r.handle.getQueueStatus()
 		
 		bytetotal = len(data)
 
@@ -177,7 +180,6 @@ class JTAG():
 			chunks.append(chunk)
 
 		print "Processed. Writing..."
-		print self.ft232r.handle.getQueueStatus()
 		self.ft232r._setAsyncMode()
 		
 		written = 0
@@ -186,7 +188,7 @@ class JTAG():
 		for chunk in chunks:
 			wrote = self.ft232r.handle.write(chunk)
 			if wrote != len(chunk):
-				print "...THAT'S WEIRD!!! %i" % wrote
+				raise WriteError()
 			written += len(chunk) / 16
 
 			if (written % (16 * 1024)) == 0 and progressCallback:
@@ -194,13 +196,12 @@ class JTAG():
 
 		progressCallback(start_time, written, bytetotal)
 
-		print self.ft232r.handle.getStatus()
-		print self.ft232r.handle.getQueueStatus()
+		self._log("Status: " + self.ft232r.handle.getStatus())
+		self._log("QueueStatus: " + self.ft232r.handle.getQueueStatus())
 		self.ft232r._setSyncMode()
 		self.ft232r._purgeBuffers()
-		print self.ft232r.handle.getQueueStatus()
-
-		print self.ft232r.handle.getStatus()
+		self._log("Status: " + self.ft232r.handle.getStatus())
+		self._log("QueueStatus: " + self.ft232r.handle.getQueueStatus())
 
 		for bit in last_bits[:-1]:
 			self.jtagClock(tdi=bit)
@@ -208,15 +209,8 @@ class JTAG():
 
 		self.tap.goto(TAP.IDLE)
 		self.ft232r.flush()
-		print self.ft232r.handle.getQueueStatus()
-		print self.ft232r.handle.getStatus()
-		#self.handle.resetDevice()
-		#self._setSyncMode()
-		#self.close()
-		#self.open(0)
-		#self._setSyncMode()
-		#print self.handle.getQueueStatus()
-		#print self.handle.getStatus()
+		self._log("Status: " + self.ft232r.handle.getStatus())
+		self._log("QueueStatus: " + self.ft232r.handle.getQueueStatus())
 	
 	# Run a stress test of the JTAG chain to make sure communications
 	# will run properly.
@@ -298,7 +292,7 @@ class JTAG():
 
 		# Fill with 1s to detect chain length
 		data = self.read_dr([1]*100)
-		print "_readDeviceCount: len(data):", len(data)
+		self._log("_readDeviceCount: len(data): " + len(data), 2)
 
 		# Now see how many devices there were.
 		for i in range(0, len(data)-1):
@@ -323,7 +317,7 @@ class JTAG():
 
 		data = self.read_dr([1]*32*self.deviceCount)
 		
-		print "_readIdcodes: len(data):", len(data)
+		self._log("_readIdcodes: len(data): " + len(data), 2)
 
 		for d in range(self.deviceCount):
 			idcode = self.parseByte(data[0:8])

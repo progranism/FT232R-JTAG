@@ -7,6 +7,7 @@ DEFAULT_FREQUENCY = 3000000
 
 class DeviceNotOpened(Exception): pass
 class InvalidChain(Exception): pass
+class WriteError(Exception): pass
 
 # Information about which of the 8 GPIO pins to use.
 class FT232R_PortList:
@@ -83,7 +84,7 @@ class FT232R:
 	
 	def _log(self, msg, level=1):
 		if level <= self.debug:
-			print "FT232R-JTAG: " + msg
+			print "FT232R:", msg
 	
 	def open(self, devicenum, portlist):
 		if self.handle is not None:
@@ -161,7 +162,7 @@ class FT232R:
 	
 	# Read the last num bits of TDO.
 	def read_data(self, num):
-		self._log("Reading %d bits." % num)
+		self._log("Reading %d bytes." % num)
 		
 		if num == 0:
 			flush()
@@ -173,34 +174,31 @@ class FT232R:
 
 		# Write all data that we don't care about.
 		if len(self.write_buffer) > 0:
-			print "Flushing out", len(self.write_buffer)
+			self._log("Flushing out " + len(self.write_buffer))
 			self.flush()
 			self._purgeBuffers()
 
 		data = []
 
 		while len(write_buffer) > 0:
-			written = min(len(write_buffer), 3072)
+			bytes_to_write = min(len(write_buffer), 3072)
 			
-			print "written:", written
-			print "len(write_buffer):", len(write_buffer)
-			print "Wrote:", self.handle.write(write_buffer[:written])
-			write_buffer = write_buffer[written:]
-			print "getStatus():", self.handle.getStatus()
-			print "getQueueStatus():", self.handle.getQueueStatus()
+			self._log("Writing %d/%d bytes" % (bytes_to_write, len(write_buffer)))
+			wrote = self.handle.write(write_buffer[:bytes_to_write])
+			self._log("Wrote %d bytes" % wrote)
+			if wrote != bytes_to_write:
+				raise WriteError()
+			write_buffer = write_buffer[wrote:]
+			self._log("Status: " + self.handle.getStatus())
+			self._log("QueueStatus: " + self.handle.getQueueStatus())
 			
-			while self.handle.getQueueStatus() < written:
+			while self.handle.getQueueStatus() < wrote:
+				# TODO: Add a timeout
 				time.sleep(1)
-				print "getQueueStatus():", self.handle.getQueueStatus()
+				self._log("QueueStatus: " + self.handle.getQueueStatus())
 			
-			data.extend(self.handle.read(written))
+			data.extend(self.handle.read(wrote))
 			
-		self._log("Read %d bits." % len(data))
+		self._log("Read %d bytes." % len(data))
 		
 		return data
-
-	
-	
-
-
-
