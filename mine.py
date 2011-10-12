@@ -89,7 +89,7 @@ def fpgaReadNonce(jtag):
 		byte = fpgaReadByte(jtag)
 
 		if byte is None:
-			jtag.tapReset()
+			jtag.reset()
 			return None
 
 		if (byte & 0xF00) == 0b111100000000:
@@ -294,6 +294,7 @@ if settings.pool is None:
 	print "ERROR: Pool not specified!"
 	parser.print_usage()
 	exit()
+host = settings.pool
 if settings.user is None:
 	print "ERROR: User not specified!"
 	parser.print_usage()
@@ -311,9 +312,9 @@ with FT232R() as ft232r:
 	ft232r.open(settings.devicenum, portlist)
 	
 	if settings.chain == 0 or settings.chain == 1:
-		jtag = JTAG(ft232r, portlist.chain_portlist(chain), chain)
+		jtag = JTAG(ft232r, portlist.chain_portlist(settings.chain), settings.chain)
 		
-	print "Discovering JTAG chain %d ..." % chain
+	print "Discovering JTAG chain %d ..." % settings.chain
 	jtag.detect()
 	
 	print "Found %i devices ...\n" % jtag.deviceCount
