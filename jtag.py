@@ -80,7 +80,7 @@ class JTAG():
 		total_ir = 100 # TODO: Should be 1000
 		if self.irlengths is not None:
 			total_ir = sum(self.irlengths)
-			self._log("total_ir = " + total_ir, 2)
+			self._log("total_ir = " + str(total_ir), 2)
 
 		self.current_instructions = [1] * total_ir
 		#self.shift_ir()
@@ -90,7 +90,7 @@ class JTAG():
 		self.tap.goto(TAP.SELECT_IR)
 		self.tap.goto(TAP.SHIFT_IR)
 		
-		self._log("current_instructions = " + self.current_instructions, 2)
+		self._log("current_instructions = " + str(self.current_instructions), 2)
 
 		for bit in self.current_instructions[:-1]:
 			self.jtagClock(tdi=bit)
@@ -150,9 +150,10 @@ class JTAG():
 		
 		bytetotal = len(data)
 
-		print "Pre processing..."
+		print "Pre-processing..."
 		# Pre-process
 		# TODO: Some way to cache this...
+		start_time = time.time()
 		chunk = ""
 		chunks = []
 		CHUNK_SIZE = 4096*4
@@ -179,9 +180,10 @@ class JTAG():
 		if len(chunk) > 0:
 			chunks.append(chunk)
 
-		print "Processed. Writing..."
+		print "Processed in %d secs." % (time.time() - start_time)
 		self.ft232r._setAsyncMode()
 		
+		print "Writing..."
 		written = 0
 		start_time = time.time()
 		
@@ -190,27 +192,29 @@ class JTAG():
 			if wrote != len(chunk):
 				raise WriteError()
 			written += len(chunk) / 16
-
+			
 			if (written % (16 * 1024)) == 0 and progressCallback:
-				progressCallback(start_time, written, bytetotal)
-
-		progressCallback(start_time, written, bytetotal)
-
-		self._log("Status: " + self.ft232r.handle.getStatus())
-		self._log("QueueStatus: " + self.ft232r.handle.getQueueStatus())
+				progressCallback(start_time, time.time(), written, bytetotal)
+		
+		progressCallback(start_time, time.time(), written, bytetotal)
+		
+		print "Loaded bitstream in %d secs." % (time.time() - start_time)
+		
+		self._log("Status: " + str(self.ft232r.handle.getStatus()))
+		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
 		self.ft232r._setSyncMode()
 		self.ft232r._purgeBuffers()
-		self._log("Status: " + self.ft232r.handle.getStatus())
-		self._log("QueueStatus: " + self.ft232r.handle.getQueueStatus())
-
+		self._log("Status: " + str(self.ft232r.handle.getStatus()))
+		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
+		
 		for bit in last_bits[:-1]:
 			self.jtagClock(tdi=bit)
 		self.jtagClock(tdi=last_bits[-1], tms=1)
-
+		
 		self.tap.goto(TAP.IDLE)
 		self.ft232r.flush()
-		self._log("Status: " + self.ft232r.handle.getStatus())
-		self._log("QueueStatus: " + self.ft232r.handle.getQueueStatus())
+		self._log("Status: " + str(self.ft232r.handle.getStatus()))
+		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
 	
 	# Run a stress test of the JTAG chain to make sure communications
 	# will run properly.
@@ -292,7 +296,7 @@ class JTAG():
 
 		# Fill with 1s to detect chain length
 		data = self.read_dr([1]*100)
-		self._log("_readDeviceCount: len(data): " + len(data), 2)
+		self._log("_readDeviceCount: len(data): " + str(len(data)), 2)
 
 		# Now see how many devices there were.
 		for i in range(0, len(data)-1):
@@ -317,7 +321,7 @@ class JTAG():
 
 		data = self.read_dr([1]*32*self.deviceCount)
 		
-		self._log("_readIdcodes: len(data): " + len(data), 2)
+		self._log("_readIdcodes: len(data): " + str(len(data)), 2)
 
 		for d in range(self.deviceCount):
 			idcode = self.parseByte(data[0:8])

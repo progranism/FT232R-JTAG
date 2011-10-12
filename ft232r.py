@@ -68,7 +68,7 @@ class JTAG_PortList:
 class FT232R:
 	def __init__(self):
 		self.handle = None
-		self.debug = 1
+		self.debug = 0
 		self.synchronous = None
 		self.write_buffer = ""
 		self.portlist = None
@@ -174,7 +174,7 @@ class FT232R:
 
 		# Write all data that we don't care about.
 		if len(self.write_buffer) > 0:
-			self._log("Flushing out " + len(self.write_buffer))
+			self._log("Flushing out " + str(len(self.write_buffer)))
 			self.flush()
 			self._purgeBuffers()
 
@@ -189,13 +189,13 @@ class FT232R:
 			if wrote != bytes_to_write:
 				raise WriteError()
 			write_buffer = write_buffer[wrote:]
-			self._log("Status: " + self.handle.getStatus())
-			self._log("QueueStatus: " + self.handle.getQueueStatus())
+			self._log("Status: " + str(self.handle.getStatus()))
+			self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
 			
 			while self.handle.getQueueStatus() < wrote:
 				# TODO: Add a timeout
 				time.sleep(1)
-				self._log("QueueStatus: " + self.handle.getQueueStatus())
+				self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
 			
 			data.extend(self.handle.read(wrote))
 			

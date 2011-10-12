@@ -11,8 +11,12 @@ def bits2int(bits):
 		x |= bits[i] << i
 	return x
 
-def bitstreamProgress(start_time, written, total):
-	print "Completed: %.1f, %d B/s" % ((written * 1000 / total) * 0.1, written * 1.0 / (time.time() - start_time))
+def bitstreamProgress(start_time, now_time, written, total):
+	message = "Completed: %.1f%% [%.1f kB/s]\r" % (100.0 * written / total, 0.001 * written  / (now_time - start_time))
+	if written/total < 1:
+		print message,
+	else:
+		print message
 
 def programBitstream(ft232r, chain, bitfile):
 	jtag = JTAG(ft232r, portlist.chain_portlist(settings.chain), settings.chain)
@@ -35,7 +39,7 @@ def programBitstream(ft232r, chain, bitfile):
 	jtag.instruction(0x09)
 	jtag.shift_ir()
 	if bits2int(jtag.read_dr([0]*32))  & 0x0FFFFFFF != bitfile.idcode:
-		print "ERROR: The specified firmware was not designed for the attached device."
+		print "ERROR: The specified bitstream was not designed for the attached device."
 		exit()
 	
 	# Load with BYPASS
@@ -71,28 +75,22 @@ def programBitstream(ft232r, chain, bitfile):
 	# Load with JSTART
 	jtag.instruction(0x0C)
 	jtag.shift_ir()
-	print "a"
 
 	# Let the device start
 	jtag.runtest(24)
-	print "b"
 	
 	# Load with Bypass
 	jtag.instruction(0xFF)
 	jtag.shift_ir()
 	jtag.instruction(0xFF)
 	jtag.shift_ir()
-	print "c"
 
 	# Load with JSTART
 	jtag.instruction(0x0C)
 	jtag.shift_ir()
-	print "d"
 
 	jtag.runtest(24)
-
-	print "e"
-
+	
 	# Check done pin
 #		jtag.instruction(0xFF)
 	# TODO: Figure this part out. & 0x20 should equal 0x20 to check the DONE pin ... ???
@@ -101,7 +99,9 @@ def programBitstream(ft232r, chain, bitfile):
 #		jtag.shift_ir()
 #		jtag.shift_dr([0])
 
-	jtag.flush()
+	ft232r.flush()
+	
+	print "Done!"
 
 
 # Option parsing:
@@ -142,8 +142,8 @@ with FT232R() as ft232r:
 	ft232r.open(settings.devicenum, portlist)
 	
 	if settings.chain == 2:
-		programBitstream(ft232r, chain=0, bitfile)
-		programBitstream(ft232r, chain=1, bitfile)
+		programBitstream(ft232r, 0, bitfile)
+		programBitstream(ft232r, 1, bitfile)
 	elif settings.chain == 0 or settings.chain == 1:
 		programBitstream(ft232r, settings.chain, bitfile)
 	else:
