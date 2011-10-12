@@ -13,10 +13,7 @@ def bits2int(bits):
 
 def bitstreamProgress(start_time, now_time, written, total):
 	message = "Completed: %.1f%% [%.1f kB/s]\r" % (100.0 * written / total, 0.001 * written  / (now_time - start_time))
-	if written/total < 1:
-		print message,
-	else:
-		print message
+	print message,
 
 def programBitstream(ft232r, chain, bitfile):
 	jtag = JTAG(ft232r, portlist.chain_portlist(settings.chain), settings.chain)

@@ -198,6 +198,7 @@ class JTAG():
 		
 		progressCallback(start_time, time.time(), written, bytetotal)
 		
+		print ""
 		print "Loaded bitstream in %d secs." % (time.time() - start_time)
 		
 		self._log("Status: " + str(self.ft232r.handle.getStatus()))
