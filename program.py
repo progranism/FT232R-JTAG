@@ -16,8 +16,8 @@ def bitstreamProgress(start_time, now_time, written, total):
 	print message,
 
 def programBitstream(ft232r, chain, bitfile):
-	jtag = JTAG(ft232r, portlist.chain_portlist(settings.chain), settings.chain)
-	print "Discovering JTAG chain %d ..." % settings.chain
+	jtag = JTAG(ft232r, portlist.chain_portlist(chain), chain)
+	print "Discovering JTAG chain %d ..." % chain
 	jtag.detect()
 	
 	print "Found %i devices ...\n" % jtag.deviceCount
