@@ -93,5 +93,6 @@ class BitFile:
 		self.date = None
 		self.time = None
 		self.length = None
+		self.idcode = None
 		self.bitstream = None
 
