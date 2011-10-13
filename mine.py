@@ -314,60 +314,60 @@ with FT232R() as ft232r:
 	if settings.chain == 0 or settings.chain == 1:
 		jtag = JTAG(ft232r, portlist.chain_portlist(settings.chain), settings.chain)
 		
-	print "Discovering JTAG chain %d ..." % settings.chain
-	jtag.detect()
-	
-	print "Found %i devices ...\n" % jtag.deviceCount
+		print "Discovering JTAG chain %d ..." % settings.chain
+		jtag.detect()
+		
+		print "Found %i devices ...\n" % jtag.deviceCount
 
-	for idcode in jtag.idcodes:
-		JTAG.decodeIdcode(idcode)
-	print ""
-	
-	# Start HTTP thread
-	thread = Thread(target=getworkloop)
-	thread.daemon = True
-	thread.start()
+		for idcode in jtag.idcodes:
+			JTAG.decodeIdcode(idcode)
+		print ""
+		
+		# Start HTTP thread
+		thread = Thread(target=getworkloop)
+		thread.daemon = True
+		thread.start()
 
-	#job = Object()
-	#job.midstate = "90f741afb3ab06f1a582c5c85ee7a561912b25a7cd09c060a89b3c2a73a48e22"
-	#job.data = "000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c771571d1be4de695931a2694217a33330e000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000"
-	#jobqueue.put(job)
+		#job = Object()
+		#job.midstate = "90f741afb3ab06f1a582c5c85ee7a561912b25a7cd09c060a89b3c2a73a48e22"
+		#job.data = "000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c771571d1be4de695931a2694217a33330e000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000"
+		#jobqueue.put(job)
 
-	while True:
-		time.sleep(1.1)
+		while True:
+			time.sleep(1.1)
 
-		job = None
-
-		try:
-			job = jobqueue.get(False)
-		except Empty:
 			job = None
 
-		if job is not None:
+			try:
+				job = jobqueue.get(False)
+			except Empty:
+				job = None
+
+			if job is not None:
+				t1 = time.time()
+				fpgaWriteJob(jtag, job)
+				fpgaClearQueue(jtag)
+				current_job = job
+				print "Writing took %i seconds." % (time.time() - t1)
+			
 			t1 = time.time()
-			fpgaWriteJob(jtag, job)
-			fpgaClearQueue(jtag)
-			current_job = job
-			print "Writing took %i seconds." % (time.time() - t1)
-		
-		t1 = time.time()
-		nonce = fpgaReadNonce(jtag)
-		print "Reading took %i seconds." % (time.time() - t1)
+			nonce = fpgaReadNonce(jtag)
+			print "Reading took %i seconds." % (time.time() - t1)
 
-		if nonce is not None:
-			print "FOUND GOLDEN TICKET"
-			gold = Object()
-			gold.job = current_job
-			gold.nonce = nonce
+			if nonce is not None:
+				print "FOUND GOLDEN TICKET"
+				gold = Object()
+				gold.job = current_job
+				gold.nonce = nonce
 
-			goldqueue.put(gold)
+				goldqueue.put(gold)
 
-		#time.sleep(1)
-		#print readNonce(jtag)
+			#time.sleep(1)
+			#print readNonce(jtag)
 
-		#fpgaReadNonce(jtag)
-		#fpgaClearQueue(jtag)
-		#fpgaWriteJob(jtag, job)
+			#fpgaReadNonce(jtag)
+			#fpgaClearQueue(jtag)
+			#fpgaWriteJob(jtag, job)
 
 #def readyForUser2(jtag):
 #	jtag.tapReset()
