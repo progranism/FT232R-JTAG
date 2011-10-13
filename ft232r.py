@@ -9,8 +9,9 @@ class DeviceNotOpened(Exception): pass
 class InvalidChain(Exception): pass
 class WriteError(Exception): pass
 
-# Information about which of the 8 GPIO pins to use.
+
 class FT232R_PortList:
+	"""Information about which of the 8 GPIO pins to use."""
 	def __init__(self, tck0, tms0, tdi0, tdo0, tck1, tms1, tdi1, tdo1):
 		self.tck0 = tck0
 		self.tms0 = tms0
@@ -26,7 +27,8 @@ class FT232R_PortList:
 		       (1 << self.tck1) | (1 << self.tms1) | (1 << self.tdi1)
 
 	def format(self, tck, tms, tdi, chain=0):
-		# chain is the JTAG chain: 0 or 1, or 2 for both
+		"""Format the pin states as a single byte for sending to the FT232R
+		   Chain is the JTAG chain: 0 or 1, or 2 for both"""
 		if chain == 0:
 			return struct.pack('=c', chr(((tck&1) << self.tck0) | 
 			                             ((tms&1) << self.tms0) | 
