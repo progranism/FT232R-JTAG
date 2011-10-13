@@ -89,7 +89,7 @@ def fpgaReadNonce(jtag):
 		byte = fpgaReadByte(jtag)
 
 		if byte is None:
-			jtag.reset()
+			jtag.tap.reset()
 			return None
 
 		if (byte & 0xF00) == 0b111100000000:
@@ -111,7 +111,7 @@ def fpgaReadNonce(jtag):
 		if (byte & 0xF00) == 0b000100000000:
 			break
 
-	jtag.reset()
+	jtag.tap.reset()
 
 	print "Nonce completely read: %.08X" % nonce
 
@@ -122,7 +122,7 @@ def fpgaClearQueue(jtag):
 	print "Clearing queue..."
 
 	while True:
-		jtag.reset()	# Gives extra time for the FPGA's FIFO to get the next byte ready.
+		jtag.tap.reset()	# Gives extra time for the FPGA's FIFO to get the next byte ready.
 
 		if fpgaReadNonce(jtag) is None:
 			break
@@ -159,7 +159,7 @@ def fpgaWriteJob(jtag, job):
 
 		jtag.shift_dr(int2bits(x, 13))
 	
-	jtag.reset()
+	jtag.tap.reset()
 
 	#print "It took %f seconds to record async data." % (time.time() - start_time)
 
