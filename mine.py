@@ -350,24 +350,25 @@ with FT232R() as ft232r:
 				current_job = job
 				print "Writing took %i seconds." % (time.time() - t1)
 			
-			t1 = time.time()
-			nonce = fpgaReadNonce(jtag)
-			print "Reading took %i seconds." % (time.time() - t1)
+			if current_job is not None:
+				t1 = time.time()
+				nonce = fpgaReadNonce(jtag)
+				print "Reading took %i seconds." % (time.time() - t1)
 
-			if nonce is not None:
-				print "FOUND GOLDEN TICKET"
-				gold = Object()
-				gold.job = current_job
-				gold.nonce = nonce
+				if nonce is not None:
+					print "FOUND GOLDEN TICKET"
+					gold = Object()
+					gold.job = current_job
+					gold.nonce = nonce
 
-				goldqueue.put(gold)
+					goldqueue.put(gold)
 
-			#time.sleep(1)
-			#print readNonce(jtag)
+				#time.sleep(1)
+				#print readNonce(jtag)
 
-			#fpgaReadNonce(jtag)
-			#fpgaClearQueue(jtag)
-			#fpgaWriteJob(jtag, job)
+				#fpgaReadNonce(jtag)
+				#fpgaClearQueue(jtag)
+				#fpgaWriteJob(jtag, job)
 
 #def readyForUser2(jtag):
 #	jtag.tapReset()
