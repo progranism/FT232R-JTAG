@@ -43,8 +43,8 @@ class JTAG():
 		if level <= self.debug:
 			print "  JTAG:", msg
 	
-	# Detect all devices on the JTAG chain. Call this after open.
 	def detect(self):
+		"""Detect all devices on the JTAG chain. Call this after open."""
 		self.deviceCount = None
 		self.idcodes = None
 		self.irlengths = None
@@ -57,11 +57,14 @@ class JTAG():
 		self.part(0)
 		self.ft232r.flush()
 	
-	# Change the active part.
 	def part(self, part):
+		"""Change the active part."""
 		self.current_part = part
 	
 	def instruction(self, instruction):
+		"""Sets the current_instructions to a new instruction.
+		Accepts an integer instruction and builds an array of bits.
+		"""
 		if self.irlengths is None:
 			raise ChainNotProperlyDetected()
 
@@ -75,8 +78,8 @@ class JTAG():
 			else:
 				self.current_instructions[i] = 1
 
-	# Reset JTAG chain
 	def reset(self):
+		"""Reset JTAG chain"""
 		total_ir = 100 # TODO: Should be 1000
 		if self.irlengths is not None:
 			total_ir = sum(self.irlengths)
@@ -126,6 +129,7 @@ class JTAG():
 		return self.shift_dr(bits, read=True)
 		
 	def read_tdo(self, num):
+		"""Reads num bits from TDO, and returns the bits as an array."""
 		data = self.ft232r.read_data(num)
 		self._log("read_tdo(%d): len(data) = %d" % (num, len(data)), 2)
 		bits = []
@@ -134,8 +138,8 @@ class JTAG():
 		
 		return bits
 	
-	# Clock TCK in the IDLE state for tckcount cycles
 	def runtest(self, tckcount):
+		"""Clock TCK in the IDLE state for tckcount cycles"""
 		self.tap.goto(TAP.IDLE)
 		for i in range(tckcount):
 			self.jtagClock(tms=0)
@@ -217,11 +221,11 @@ class JTAG():
 		self._log("Status: " + str(self.ft232r.handle.getStatus()))
 		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
 	
-	# Run a stress test of the JTAG chain to make sure communications
-	# will run properly.
-	# This amounts to running the readChain function a hundred times.
-	# Communication failure will be seen as an exception.
 	def stressTest(self, testcount=100):
+		"""Run a stress test of the JTAG chain to make sure communications will run properly.
+		This amounts to running the readChain function a hundred times.
+		Communication failure will be seen as an exception.
+		"""
 		self._log("Stress testing...", 0)
 
 		self.readChain()

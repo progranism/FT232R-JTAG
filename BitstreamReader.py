@@ -28,7 +28,7 @@ class BitFileReadError(Exception):
 		return repr(self.parameter)
 
 class BitFile:
-	# Read a .bit file and return a BitFile object.
+	"""Read a .bit file and return a BitFile object."""
 	@staticmethod
 	def read(filestream):
 		bitfile = BitFile()

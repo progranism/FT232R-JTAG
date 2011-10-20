@@ -28,7 +28,8 @@ class FT232R_PortList:
 
 	def format(self, tck, tms, tdi, chain=0):
 		"""Format the pin states as a single byte for sending to the FT232R
-		   Chain is the JTAG chain: 0 or 1, or 2 for both"""
+		Chain is the JTAG chain: 0 or 1, or 2 for both
+		"""
 		if chain == 0:
 			return struct.pack('=c', chr(((tck&1) << self.tck0) | 
 			                             ((tms&1) << self.tms0) | 
@@ -46,6 +47,7 @@ class FT232R_PortList:
 			                             ((tdi&1) << self.tdi1)))
 	
 	def chain_portlist(self, chain=0):
+		"""Returns a JTAG_PortList object for the specified chain"""
 		if chain == 0:
 			return JTAG_PortList(self.tck0, self.tms0, self.tdi0, self.tdo0)
 		elif chain == 1:
@@ -55,6 +57,7 @@ class FT232R_PortList:
 
 
 class JTAG_PortList:
+	"""A smaller version of the FT232R_PortList class, specific to the JTAG chain"""
 	def __init__(self, tck, tms, tdi, tdo):
 		self.tck = tck
 		self.tms = tms
@@ -89,6 +92,7 @@ class FT232R:
 			print "FT232R:", msg
 	
 	def open(self, devicenum, portlist):
+		"""Open an FT232R device with devicenum and initialize with the portlist"""
 		if self.handle is not None:
 			self.close()
 
@@ -131,8 +135,8 @@ class FT232R:
 		self.handle.setBaudRate(rate)
 		#self.handle.setDivisor(0)	# Another way to set the maximum speed.
 	
-	# Put the FT232R into Synchronous mode.
 	def _setSyncMode(self):
+		"""Put the FT232R into Synchronous mode."""
 		if self.handle is None:
 			raise DeviceNotOpened()
 
@@ -142,9 +146,8 @@ class FT232R:
 		self.handle.setBitMode(self.portlist.output_mask(), 4)
 		self.synchronous = True
 
-	
-	# Put the FT232R into Asynchronous mode.
 	def _setAsyncMode(self):
+		"""Put the FT232R into Asynchronous mode."""
 		if self.handle is None:
 			raise DeviceNotOpened()
 
@@ -155,6 +158,7 @@ class FT232R:
 		self.synchronous = False
 	
 	def flush(self):
+		"""Write all data in the write buffer and purge the FT232R buffers"""
 		self._setAsyncMode()
 		while len(self.write_buffer) > 0:
 			self.handle.write(self.write_buffer[:4096])
@@ -162,12 +166,12 @@ class FT232R:
 		self._setSyncMode()
 		self._purgeBuffers()
 	
-	# Read the last num bits of TDO.
 	def read_data(self, num):
+		"""Read num bytes from the FT232R and return an array of data."""
 		self._log("Reading %d bytes." % num)
 		
 		if num == 0:
-			flush()
+			self.flush()
 			return []
 
 		# Repeat the last byte so we can read the last bit of TDO.
