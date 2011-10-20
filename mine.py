@@ -100,7 +100,7 @@ def fpgaReadNonce(jtag):
 	# We now have the first byte
 	nonce = byte & 0xFF
 	count = 1
-	print "Potential nonce, reading the rest..."
+	#print "Potential nonce, reading the rest..."
 	while True:
 		byte = fpgaReadByte(jtag)
 
@@ -115,13 +115,13 @@ def fpgaReadNonce(jtag):
 
 	jtag.tap.reset()
 
-	print "Nonce completely read: %.08X" % nonce
+	#print "Nonce completely read: %.08X" % nonce
 
 	return nonce
 
 # TODO: This may not actually clear the queue, but should be correct most of the time.
 def fpgaClearQueue(jtag):
-	print "Clearing queue..."
+	#print "Clearing queue..."
 
 	while True:
 		jtag.tap.reset()	# Gives extra time for the FPGA's FIFO to get the next byte ready.
@@ -129,7 +129,7 @@ def fpgaClearQueue(jtag):
 		if fpgaReadNonce(jtag) is None:
 			break
 	
-	print "Queue cleared."
+	#print "Queue cleared."
 
 def fpgaWriteJob(jtag, job):
 	# We need the 256-bit midstate, and 12 bytes from data.
@@ -143,7 +143,7 @@ def fpgaWriteJob(jtag, job):
 	midstate.reverse()
 	data.reverse()
 
-	print "Loading job data..."
+	#print "Loading job data..."
 
 	start_time = time.time()
 	#jtag._setAsyncMode()
@@ -170,9 +170,9 @@ def fpgaWriteJob(jtag, job):
 	
 	ft232r.flush()
 
-	print "It took %.1f seconds to write data." % (time.time() - start_time)
+	#print "It took %.1f seconds to write data." % (time.time() - start_time)
 
-	print "Job data loaded."
+	print "Job data loaded for FPGA%d." % jtag.chain
 
 
 # 
@@ -245,20 +245,21 @@ def sendGold(connection, gold, chain):
 	hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 	data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 
-	print "Nonce: ", gold.nonce
-	print "Hexnonce: ", hexnonce
-	print "Original Data: " + gold.job.data
-	print "Nonced Data: " + data
+	print "Nonce:", gold.nonce,
+	#print "Hexnonce: ", hexnonce
+	#print "Original Data: " + gold.job.data
+	#print "Nonced Data: " + data
 
 	(connection, accepted) = getwork(connection, data)
 	if accepted is not None:
 		if accepted == True:
 			count_accepted[chain] += 1
-			print "accepted (%d/%d)" % (count_accepted[chain], count_rejected[chain])
+			print "accepted! (FPGA%d)" % chain
 		else:
 			count_rejected[chain] += 1
-			print "_rejected_ (%d/%d)" % (count_accepted[chain], count_rejected[chain])
-	
+			print "_rejected_ (FPGA%d)" % chain
+	else:
+		print "error!"
 	return connection
 	
 
@@ -291,7 +292,7 @@ def getworkloop(chain):
 
 		if gold is not None:
 			rpc_lock.acquire()
-			print "SUBMITTING GOLDEN TICKET"
+			#print "SUBMITTING GOLDEN TICKET"
 			connection = sendGold(connection, gold, chain)
 			rpc_lock.release()
 
@@ -326,12 +327,35 @@ def mineloop(chain):
 			#print "Reading took %i seconds." % (time.time() - t1)
 
 			if nonce is not None:
-				print "FOUND GOLDEN TICKET"
+				#print "FOUND GOLDEN TICKET"
 				gold = Object()
 				gold.job = current_job
 				gold.nonce = nonce
 				goldqueue[chain].put(gold)
 
+				
+def format_time(secs):
+	mins = int(secs/60)
+	hours = int(mins/60)
+	secs -= mins*60
+	mins -= hours*60
+	return "%d:%02d:%02d" % (hours, mins, secs)
+	
+def format_rate(secs, shares):
+	hash_rate = shares * pow(2, 32) / secs
+	
+	prefix = ''
+	if hash_rate > 1000:
+		hash_rate /= 1000
+		prefix = 'k'
+	if hash_rate > 1000:
+		hash_rate /= 1000
+		prefix = 'M'
+	if hash_rate > 1000:
+		hash_rate /= 1000
+		prefix = 'G'
+	
+	return "%.2f %sH/s" % (hash_rate, prefix)
 
 
 USER_INSTRUCTION = 0b000010
@@ -402,97 +426,12 @@ with FT232R() as ft232r:
 		minethread[chain].daemon = True
 		minethread[chain].start()
 		
+	start_time = time.time()
+	
 	while True:
 		time.sleep(5)
-		print "FPGA 0: (%d/%d), FPGA 1: (%d/%d)" % (count_accepted[0], count_rejected[0],
-		                                            count_accepted[1], count_rejected[1])
-
-		#job = Object()
-		#job.midstate = "90f741afb3ab06f1a582c5c85ee7a561912b25a7cd09c060a89b3c2a73a48e22"
-		#job.data = "000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c771571d1be4de695931a2694217a33330e000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000"
-		#jobqueue.put(job)
-
-		
-
-				#time.sleep(1)
-				#print readNonce(jtag)
-
-				#fpgaReadNonce(jtag)
-				#fpgaClearQueue(jtag)
-				#fpgaWriteJob(jtag, job)
-
-#def readyForUser2(jtag):
-#	jtag.tapReset()
-#
-#	jtag.jtagClock(tms=0)
-#	jtag.jtagClock(tms=1)
-#	jtag.jtagClock(tms=1)
-#	jtag.jtagClock(tms=0)
-#	jtag.jtagClock(tms=0)
-#
-#	jtag.jtagClock(tdi=0)
-#	jtag.jtagClock(tdi=1)
-#	jtag.jtagClock(tdi=0)
-#	jtag.jtagClock(tdi=0)
-#	jtag.jtagClock(tdi=0)
-#	jtag.jtagClock(tdi=0)
-#
-#	for i in range(0, 31):
-#		jtag.jtagClock(tdi=1)
-#
-#	jtag.jtagClock(tdi=1,tms=1)
-#
-#	# Shift-DR
-#	jtag.jtagClock(tms=1, tdi=1)
-#	jtag.jtagClock(tms=1, tdi=1)
-#	jtag.jtagClock(tms=0, tdi=1)
-#	jtag.jtagClock(tms=0, tdi=1)
-#
-#readyForUser2(jtag)
-#
-#data = midstate + data + [0]
-#
-#for i in range(0, len(data)):
-#	x = data[i]
-#
-#	if i != 0:
-#		x = 0x100 | x
-#	
-#	for j in range(13):
-#		jtag.jtagClock(tdi=(x&1))
-#		x >>= 1
-#	
-#	jtag.jtagClock(tdi=0)
-#	jtag.jtagClock(tdi=0, tms=1)
-#	jtag.jtagClock(tdi=0, tms=1)
-#	jtag.jtagClock(tdi=0, tms=1)
-#	jtag.jtagClock(tdi=0, tms=0)
-#	jtag.jtagClock(tdi=0, tms=0)
-#
-#jtag.tapReset()
-#
-#print "Test data loaded.\n"
-#
-#def readNonce(jtag):
-#	readyForUser2(jtag)
-#
-#	x = 0
-#
-#	for i in range(0, 13):
-#		x |= jtag.jtagClock(tdi=0) << i
-#	
-#	jtag.jtagClock(tdi=0)
-#	jtag.jtagClock(tdi=0, tms=1)
-#
-#	jtag.tapReset()
-#
-#	return "%.04X" % x
-#
-#
-#while True:
-#	time.sleep(1)
-#	print readNonce(jtag)
-#
-#jtag.close()
-#
-#
+		time_string = format_time(time.time()-start_time)
+		rate_string = format_rate(time.time()-start_time, sum(count_accepted)+sum(count_rejected))
+		print "FPGA 0: (%d/%d), FPGA 1: (%d/%d), Time: %s, Rate: %s" % (count_accepted[0], count_rejected[0],
+		                                                                count_accepted[1], count_rejected[1],
+		                                                                time_string, rate_string)
