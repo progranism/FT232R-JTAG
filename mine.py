@@ -391,16 +391,19 @@ with FT232R() as ft232r:
 		exit()
 	
 	jtag = []
+	fpga_num = 0
 	for chain in chain_list:
 		jtag.append(JTAG(ft232r, portlist.chain_portlist(chain), chain))
 		
 		print "Discovering JTAG chain %d ..." % chain
 		jtag[chain].detect()
 		
-		print "Found %i devices ...\n" % jtag[chain].deviceCount
+		print "Found %i devices ..." % jtag[chain].deviceCount
 
 		for idcode in jtag[chain].idcodes:
+			print "FPGA%d:" % fpga_num
 			JTAG.decodeIdcode(idcode)
+			fpga_num += 1
 		print ""
 	
 	getworkthread = []
