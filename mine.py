@@ -68,7 +68,7 @@ def bits2int(bits):
 
 def fpgaReadByte(jtag):
 	bits = int2bits(0, 13)
-	byte = bits2int(jtag.shift_dr(bits, True))
+	byte = bits2int(jtag.read_dr(bits))
 
 	print "Read: %.04X" % byte
 
@@ -78,7 +78,9 @@ def fpgaReadByte(jtag):
 	return byte
 
 def fpgaReadNonce(jtag):
+	jtag.tap.reset()
 	jtag.instruction(USER_INSTRUCTION)
+	jtag.shift_ir()
 
 	# Sync to the beginning of a nonce.
 	# The MSB is a VALID flag. If 0, data is invalid (queue empty).
@@ -146,8 +148,9 @@ def fpgaWriteJob(jtag, job):
 	start_time = time.time()
 	#jtag._setAsyncMode()
 	#jtag.async_record = ""
-
+	
 	jtag.instruction(USER_INSTRUCTION)
+	jtag.shift_ir()
 
 	data = midstate + data + [0]
 
