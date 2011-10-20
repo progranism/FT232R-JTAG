@@ -5,7 +5,7 @@ from optparse import OptionParser
 import traceback
 from base64 import b64encode
 from json import dumps, loads
-from threading import Thread
+from threading import Thread, Lock
 from Queue import Queue, Empty
 import httplib
 import socket
@@ -70,7 +70,7 @@ def fpgaReadByte(jtag):
 	bits = int2bits(0, 13)
 	byte = bits2int(jtag.read_dr(bits))
 
-	print "Read: %.04X" % byte
+	#print "Read: %.04X" % byte
 
 	if byte < 0x1000:
 		return None
@@ -238,7 +238,10 @@ def getwork(connection, data=None):
 	
 	return (connection, None)
 
-def sendGold(connection, gold):
+def sendGold(connection, gold, chain):
+	global count_accepted
+	global count_rejected
+	
 	hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 	data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 
@@ -250,14 +253,16 @@ def sendGold(connection, gold):
 	(connection, accepted) = getwork(connection, data)
 	if accepted is not None:
 		if accepted == True:
-			print "accepted"
+			count_accepted[chain] += 1
+			print "accepted (%d/%d)" % (count_accepted[chain], count_rejected[chain])
 		else:
-			print "_rejected_"
+			count_rejected[chain] += 1
+			print "_rejected_ (%d/%d)" % (count_accepted[chain], count_rejected[chain])
 	
 	return connection
 	
 
-def getworkloop():
+def getworkloop(chain):
 	connection = None
 	last_job = None
 
@@ -267,30 +272,69 @@ def getworkloop():
 		if last_job is None or (time.time() - last_job) > 20:
 			last_job = time.time()
 
+			rpc_lock.acquire()
 			(connection, work) = getwork(connection)
+			rpc_lock.release()
 
 			if work is not None:
 				job = Object()
 				job.midstate = work['midstate']
 				job.data = work['data']
 
-				jobqueue.put(job)
+				jobqueue[chain].put(job)
 
 		gold = None
 		try:
-			gold = goldqueue.get(False)
+			gold = goldqueue[chain].get(False)
 		except Empty:
 			gold = None
 
 		if gold is not None:
+			rpc_lock.acquire()
 			print "SUBMITTING GOLDEN TICKET"
-			connection = sendGold(connection, gold)
+			connection = sendGold(connection, gold, chain)
+			rpc_lock.release()
 
+
+def mineloop(chain):
+	current_job = None
+	
+	while True:
+		time.sleep(1.1)
+
+		job = None
+
+		try:
+			job = jobqueue[chain].get(False)
+		except Empty:
+			job = None
+
+		if job is not None:
+			ft232r_lock.acquire()
+			#t1 = time.time()
+			fpgaWriteJob(jtag[chain], job)
+			fpgaClearQueue(jtag[chain])
+			ft232r_lock.release()
+			current_job = job
+			#print "Writing took %i seconds." % (time.time() - t1)
+		
+		if current_job is not None:
+			ft232r_lock.acquire()
+			#t1 = time.time()
+			nonce = fpgaReadNonce(jtag[chain])
+			ft232r_lock.release()
+			#print "Reading took %i seconds." % (time.time() - t1)
+
+			if nonce is not None:
+				print "FOUND GOLDEN TICKET"
+				gold = Object()
+				gold.job = current_job
+				gold.nonce = nonce
+				goldqueue[chain].put(gold)
 
 
 
 USER_INSTRUCTION = 0b000010
-current_job = None
 
 proto = "http"
 if settings.pool is None:
@@ -306,65 +350,69 @@ postdata = {'method': 'getwork', 'id': 'json'}
 headers = {"User-Agent": 'Bitcoin Dominator ALPHA', "Authorization": 'Basic ' + b64encode(settings.user)}
 timeout = 5
 
-jobqueue = Queue()
-goldqueue = Queue()
-
+count_accepted = [0, 0]
+count_rejected = [0, 0]
 
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 	ft232r.open(settings.devicenum, portlist)
 	
 	if settings.chain == 0 or settings.chain == 1:
-		jtag = JTAG(ft232r, portlist.chain_portlist(settings.chain), settings.chain)
+		chain_list = [settings.chain]
+	elif settings.chain == 2:
+		chain_list = [0, 1]
+	else:
+		print "ERROR: Invalid chain option!"
+		parser.print_usage()
+		exit()
+	
+	jtag = []
+	for chain in chain_list:
+		jtag.append(JTAG(ft232r, portlist.chain_portlist(chain), chain))
 		
-		print "Discovering JTAG chain %d ..." % settings.chain
-		jtag.detect()
+		print "Discovering JTAG chain %d ..." % chain
+		jtag[chain].detect()
 		
-		print "Found %i devices ...\n" % jtag.deviceCount
+		print "Found %i devices ...\n" % jtag[chain].deviceCount
 
-		for idcode in jtag.idcodes:
+		for idcode in jtag[chain].idcodes:
 			JTAG.decodeIdcode(idcode)
 		print ""
+	
+	getworkthread = []
+	minethread = []
+	
+	jobqueue = []
+	goldqueue = []
+	
+	ft232r_lock = Lock()
+	rpc_lock = Lock()
+	
+	for chain in chain_list:
+		jobqueue.append(Queue())
+		goldqueue.append(Queue())
 		
-		# Start HTTP thread
-		thread = Thread(target=getworkloop)
-		thread.daemon = True
-		thread.start()
+		# Start HTTP thread(s)
+		getworkthread.append(Thread(target=getworkloop, args=(chain,)))
+		getworkthread[chain].daemon = True
+		getworkthread[chain].start()
+		
+		# Start mining thread(s)
+		minethread.append(Thread(target=mineloop, args=(chain,)))
+		minethread[chain].daemon = True
+		minethread[chain].start()
+		
+	while True:
+		time.sleep(5)
+		print "FPGA 0: (%d/%d), FPGA 1: (%d/%d)" % (count_accepted[0], count_rejected[0],
+		                                            count_accepted[1], count_rejected[1])
 
 		#job = Object()
 		#job.midstate = "90f741afb3ab06f1a582c5c85ee7a561912b25a7cd09c060a89b3c2a73a48e22"
 		#job.data = "000000014cc2c57c7905fd399965282c87fe259e7da366e035dc087a0000141f000000006427b6492f2b052578fb4bc23655ca4e8b9e2b9b69c88041b2ac8c771571d1be4de695931a2694217a33330e000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000"
 		#jobqueue.put(job)
 
-		while True:
-			time.sleep(1.1)
-
-			job = None
-
-			try:
-				job = jobqueue.get(False)
-			except Empty:
-				job = None
-
-			if job is not None:
-				t1 = time.time()
-				fpgaWriteJob(jtag, job)
-				fpgaClearQueue(jtag)
-				current_job = job
-				print "Writing took %i seconds." % (time.time() - t1)
-			
-			if current_job is not None:
-				t1 = time.time()
-				nonce = fpgaReadNonce(jtag)
-				print "Reading took %i seconds." % (time.time() - t1)
-
-				if nonce is not None:
-					print "FOUND GOLDEN TICKET"
-					gold = Object()
-					gold.job = current_job
-					gold.nonce = nonce
-
-					goldqueue.put(gold)
+		
 
 				#time.sleep(1)
 				#print readNonce(jtag)
