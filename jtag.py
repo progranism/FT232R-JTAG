@@ -173,6 +173,9 @@ class JTAG():
 				chunks.append(chunk)
 				chunk = ""
 
+		if len(chunk) > 0:
+			chunks.append(chunk)
+
 		last_bits = []
 		d = ord(data[-1])
 		for i in range(7, -1, -1):
@@ -180,9 +183,6 @@ class JTAG():
 
 		for i in range(self.current_part):
 			last_bits.append(0)
-
-		if len(chunk) > 0:
-			chunks.append(chunk)
 
 		print "Processed in %d secs." % (time.time() - start_time)
 		self.ft232r._setAsyncMode()
