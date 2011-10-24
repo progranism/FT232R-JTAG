@@ -171,9 +171,10 @@ def fpgaWriteJob(jtag, job):
 	ft232r.flush()
 
 	#print "It took %.1f seconds to write data." % (time.time() - start_time)
-
+	
+	print_lock.acquire()
 	print "Job data loaded for FPGA%d." % jtag.chain
-
+	print_lock.release()
 
 # 
 #def readNonce(jtag):
@@ -233,6 +234,8 @@ def getwork(connection, data=None):
 		failure('Wrong username or password.')
 	except RPCError as e:
 		print e
+		if e == "invalid-work":
+			return (connection, e)
 	except (IOError, httplib.HTTPException, ValueError):
 		print "Problems communicating with bitcoin RPC."
 	
@@ -245,7 +248,9 @@ def sendGold(connection, gold, chain):
 	hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 	data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 
+	print_lock.acquire()
 	print "Nonce:", gold.nonce,
+	print "(FPGA%d)" % chain,
 	#print "Hexnonce: ", hexnonce
 	#print "Original Data: " + gold.job.data
 	#print "Nonced Data: " + data
@@ -254,12 +259,13 @@ def sendGold(connection, gold, chain):
 	if accepted is not None:
 		if accepted == True:
 			count_accepted[chain] += 1
-			print "accepted! (FPGA%d)" % chain
+			print "accepted!"
 		else:
 			count_rejected[chain] += 1
-			print "_rejected_ (FPGA%d)" % chain
+			print "_rejected_"
 	else:
 		print "error!"
+	print_lock.release()
 	return connection
 	
 
@@ -357,7 +363,15 @@ def format_rate(secs, shares):
 	
 	return "%.2f %sH/s" % (hash_rate, prefix)
 
-
+def message(msg, newline=True):
+	#msg = msg + "\r"
+	print_lock.acquire()
+	#if newline:
+	#	print ""
+	#print msg,
+	print msg
+	print_lock.release()
+	
 USER_INSTRUCTION = 0b000010
 
 proto = "http"
@@ -414,6 +428,7 @@ with FT232R() as ft232r:
 	
 	ft232r_lock = Lock()
 	rpc_lock = Lock()
+	print_lock = Lock()
 	
 	for chain in chain_list:
 		jobqueue.append(Queue())
@@ -435,6 +450,8 @@ with FT232R() as ft232r:
 		time.sleep(5)
 		time_string = format_time(time.time()-start_time)
 		rate_string = format_rate(time.time()-start_time, sum(count_accepted)+sum(count_rejected))
-		print "FPGA 0: (%d/%d), FPGA 1: (%d/%d), Time: %s, Rate: %s" % (count_accepted[0], count_rejected[0],
-		                                                                count_accepted[1], count_rejected[1],
-		                                                                time_string, rate_string)
+		message("FPGA 0: (%d/%d), FPGA 1: (%d/%d), Time: %s, Rate: %s" % 
+		        ( count_accepted[0], count_rejected[0],
+		          count_accepted[1], count_rejected[1],
+		          time_string, rate_string
+				), False)
