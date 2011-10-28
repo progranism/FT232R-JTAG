@@ -362,7 +362,8 @@ class JTAG():
 		rev = (idcode >> 28) & 0x000f
 
 		print "Device ID: %.8X" % idcode
-		print "Manuf: %x, Part Size: %x, Family Code: %x, Revision: %0d" % (manuf, size, family, rev)
+		#print "Manuf: %x, Part Size: %x, Family Code: %x, Revision: %0d" % (manuf, size, family, rev)
+		
 	
 #	def buildInstruction(self, deviceid, instruction):
 #		if self.irlengths is None:

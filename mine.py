@@ -174,9 +174,8 @@ def fpgaWriteJob(jtag, job):
 
 	#print "It took %.1f seconds to write data." % (time.time() - start_time)
 	
-	print_lock.acquire()
-	print "Job data loaded for FPGA%d." % jtag.chain
-	print_lock.release()
+	
+	message("Job data loaded for FPGA%d." % jtag.chain)
 
 # 
 #def readNonce(jtag):
@@ -228,18 +227,24 @@ def getwork(connection, data=None):
 		if not connection:
 			connection = connect(proto, host, timeout)
 
-		postdata['params'] = [data] if data is not None else []
-		(connection, result) = request(connection, '/', headers, dumps(postdata))
+		retry = True
+		while retry:
+			postdata['params'] = [data] if data is not None else []
+			(connection, result) = request(connection, '/', headers, dumps(postdata))
+			if result is not None:
+				retry = False
+			else:
+				message("Got empty response!")
 
 		return (connection, result['result'])
 	except NotAuthorized:
 		failure('Wrong username or password.')
 	except RPCError as e:
-		print e
-		if e == "invalid-work":
-			return (connection, e)
+		#print e
+		return (connection, e)
 	except (IOError, httplib.HTTPException, ValueError):
-		print "Problems communicating with bitcoin RPC."
+		message("Problems communicating with bitcoin RPC.")
+		
 	
 	return (connection, None)
 
@@ -250,9 +255,8 @@ def sendGold(connection, gold, chain):
 	hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 	data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 
-	print_lock.acquire()
-	print "Nonce:", gold.nonce,
-	print "(FPGA%d)" % chain,
+	msg = "Nonce: " + hex(gold.nonce)[2:]
+	msg += " (FPGA%d) " % chain
 	#print "Hexnonce: ", hexnonce
 	#print "Original Data: " + gold.job.data
 	#print "Nonced Data: " + data
@@ -261,13 +265,14 @@ def sendGold(connection, gold, chain):
 	if accepted is not None:
 		if accepted == True:
 			count_accepted[chain] += 1
-			print "accepted!"
+			msg += "accepted!"
 		else:
 			count_rejected[chain] += 1
-			print "_rejected_"
+			msg += "_rejected_"
 	else:
-		print "error!"
-	print_lock.release()
+		count_error[chain] += 1
+		msg += "error"
+	message(msg)
 	return connection
 	
 
@@ -281,9 +286,9 @@ def getworkloop(chain):
 		if last_job is None or (time.time() - last_job) > settings.getwork_interval:
 			last_job = time.time()
 
-			rpc_lock.acquire()
+			#rpc_lock.acquire()
 			(connection, work) = getwork(connection)
-			rpc_lock.release()
+			#rpc_lock.release()
 
 			if work is not None:
 				job = Object()
@@ -291,6 +296,8 @@ def getworkloop(chain):
 				job.data = work['data']
 
 				jobqueue[chain].put(job)
+			else:
+				last_job = None
 
 		gold = None
 		try:
@@ -299,17 +306,17 @@ def getworkloop(chain):
 			gold = None
 
 		if gold is not None:
-			rpc_lock.acquire()
+			#rpc_lock.acquire()
 			#print "SUBMITTING GOLDEN TICKET"
 			connection = sendGold(connection, gold, chain)
-			rpc_lock.release()
+			#rpc_lock.release()
 
 
 def mineloop(chain):
 	current_job = None
 	
 	while True:
-		time.sleep(1.1)
+		time.sleep(0.1)
 
 		job = None
 
@@ -387,11 +394,12 @@ if settings.user is None:
 	parser.print_usage()
 	exit()
 postdata = {'method': 'getwork', 'id': 'json'}
-headers = {"User-Agent": 'Bitcoin Dominator ALPHA', "Authorization": 'Basic ' + b64encode(settings.user)}
+headers = {"User-Agent": 'FPGAMiner', "Authorization": 'Basic ' + b64encode(settings.user)}
 timeout = 5
 
 count_accepted = [0, 0]
 count_rejected = [0, 0]
+count_error = [0, 0]
 
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
@@ -417,7 +425,7 @@ with FT232R() as ft232r:
 		print "Found %i devices ..." % jtag[chain].deviceCount
 
 		for idcode in jtag[chain].idcodes:
-			print "FPGA%d:" % fpga_num
+			print "FPGA", fpga_num, ":",
 			JTAG.decodeIdcode(idcode)
 			fpga_num += 1
 		print ""
@@ -451,9 +459,9 @@ with FT232R() as ft232r:
 	while True:
 		time.sleep(5)
 		time_string = format_time(time.time()-start_time)
-		rate_string = format_rate(time.time()-start_time, sum(count_accepted)+sum(count_rejected))
-		message("FPGA 0: (%d/%d), FPGA 1: (%d/%d), Time: %s, Rate: %s" % 
-		        ( count_accepted[0], count_rejected[0],
-		          count_accepted[1], count_rejected[1],
-		          time_string, rate_string
-				), False)
+		rate_string = format_rate(time.time()-start_time, sum(count_accepted)+sum(count_rejected)+sum(count_error))
+		msg = "[%s] " % time_string
+		for chain in chain_list:
+			msg += "FPGA%d: [%d/%d/%d] " % (chain, count_accepted[chain], count_rejected[chain], count_error[chain])
+		msg += "[%s]" % rate_string
+		message(msg, False)
