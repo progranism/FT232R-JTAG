@@ -191,16 +191,16 @@ def fpgaWriteJob(jtag, job):
 def connect(proto, host, timeout):
 	connector = httplib.HTTPSConnection if proto == 'https' else httplib.HTTPConnection
 
-	return connector(host, strict=True, timeout=timeout)
+	return connector(host, strict=False, timeout=timeout)
 
 def request(connection, url, headers, data=None):
 	result = response = None
 
 	try:
-		if data is not None:
-			connection.request('POST', url, data, headers)
-		else:
-			connection.request('GET', url, headers=headers)
+		#if data is not None:
+		connection.request('POST', url, data, headers)
+		#else:
+			#connection.request('POST', url, headers=headers)
 
 		response = connection.getresponse()
 
@@ -226,15 +226,8 @@ def getwork(connection, data=None):
 	try:
 		if not connection:
 			connection = connect(proto, host, timeout)
-
-		retry = True
-		while retry:
-			postdata['params'] = [data] if data is not None else []
-			(connection, result) = request(connection, '/', headers, dumps(postdata))
-			if result is not None:
-				retry = False
-			else:
-				message("Got empty response!")
+		postdata['params'] = [data] if data is not None else []
+		(connection, result) = request(connection, '/', headers, dumps(postdata))
 
 		return (connection, result['result'])
 	except NotAuthorized:
@@ -242,8 +235,13 @@ def getwork(connection, data=None):
 	except RPCError as e:
 		#print e
 		return (connection, e)
-	except (IOError, httplib.HTTPException, ValueError):
-		message("Problems communicating with bitcoin RPC.")
+	except IOError as (errno, strerror):
+		message("I/O Error:", strerror)
+	except ValueError:
+		message("ValueError!")
+	except httplib.HTTPException:
+		message("HTTP Error!")
+		return (None, None)
 		
 	
 	return (connection, None)
@@ -286,9 +284,9 @@ def getworkloop(chain):
 		if last_job is None or (time.time() - last_job) > settings.getwork_interval:
 			last_job = time.time()
 
-			#rpc_lock.acquire()
+			rpc_lock.acquire()
 			(connection, work) = getwork(connection)
-			#rpc_lock.release()
+			rpc_lock.release()
 
 			if work is not None:
 				job = Object()
@@ -297,7 +295,7 @@ def getworkloop(chain):
 
 				jobqueue[chain].put(job)
 			else:
-				last_job = None
+				last_job = time.time() - settings.getwork_interval + 2
 
 		gold = None
 		try:
@@ -306,10 +304,12 @@ def getworkloop(chain):
 			gold = None
 
 		if gold is not None:
-			#rpc_lock.acquire()
+			rpc_lock.acquire()
 			#print "SUBMITTING GOLDEN TICKET"
 			connection = sendGold(connection, gold, chain)
-			#rpc_lock.release()
+			if connection is None:
+				connection = sendGold(connection, gold, chain)
+			rpc_lock.release()
 
 
 def mineloop(chain):
@@ -393,8 +393,11 @@ if settings.user is None:
 	print "ERROR: User not specified!"
 	parser.print_usage()
 	exit()
-postdata = {'method': 'getwork', 'id': 'json'}
-headers = {"User-Agent": 'FPGAMiner', "Authorization": 'Basic ' + b64encode(settings.user)}
+postdata = {'method': 'getwork', 'id': 1}
+headers = {"User-Agent": 'FPGAMiner', 
+           "Authorization": 'Basic ' + b64encode(settings.user),
+           "Content-Type": 'application/json'
+          }
 timeout = 5
 
 count_accepted = [0, 0]
@@ -459,7 +462,7 @@ with FT232R() as ft232r:
 	while True:
 		time.sleep(5)
 		time_string = format_time(time.time()-start_time)
-		rate_string = format_rate(time.time()-start_time, sum(count_accepted)+sum(count_rejected)+sum(count_error))
+		rate_string = format_rate(time.time()-start_time, sum(count_accepted)+sum(count_rejected))
 		msg = "[%s] " % time_string
 		for chain in chain_list:
 			msg += "FPGA%d: [%d/%d/%d] " % (chain, count_accepted[chain], count_rejected[chain], count_error[chain])
