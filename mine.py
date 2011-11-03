@@ -22,7 +22,7 @@ parser.add_option("-c", "--chain", type="int", dest="chain", default=0,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 0)")
 parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=20,
                   help="Getwork interval in seconds (default 20)")
-pparser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
+parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
                   help="Verbose logging")
 parser.add_option("-p", "--pool", type="str", dest="pool",
                   help="URL for the pool, e.g. pool.com:8337")
@@ -347,7 +347,7 @@ count_accepted = [0, 0]
 count_rejected = [0, 0]
 count_error = [0, 0]
 
-logger = ConsoleLogger(settings.chain, True)
+logger = ConsoleLogger(settings.chain, settings.verbose)
 
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
