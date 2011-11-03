@@ -9,6 +9,7 @@ from threading import Thread, Lock
 from Queue import Queue, Empty
 import httplib
 import socket
+from ConsoleLogger import ConsoleLogger
 
 NUM_RETRIES = 5
 USER_INSTRUCTION = 0b000010
@@ -175,7 +176,7 @@ def fpgaWriteJob(jtag, job):
 	ft232r.flush()
 
 	#print "It took %.1f seconds to write data." % (time.time() - start_time)
-	message("Job data loaded for FPGA%d." % jtag.chain)
+	logger.reportDebug("Job data loaded for FPGA%d." % jtag.chain)
 
 def connect(proto, host, timeout):
 	connector = httplib.HTTPSConnection if proto == 'https' else httplib.HTTPConnection
@@ -218,7 +219,6 @@ def getwork(connection, data=None):
 			#connection.set_debuglevel(1)
 		postdata['params'] = [data] if data is not None else []
 		(connection, result) = request(connection, '/', headers, dumps(postdata))
-		#message(result)
 		return (connection, result['result'])
 	except NotAuthorized:
 		failure('Wrong username or password.')
@@ -226,11 +226,11 @@ def getwork(connection, data=None):
 		#print e
 		return (connection, e)
 	except IOError:
-		message("IOError!")
+		logger.reportDebug("IOError!")
 	except ValueError:
-		message("ValueError!")
+		logger.reportDebug("ValueError!")
 	except httplib.HTTPException:
-		#message("HTTP Error!")
+		#logger.reportDebug("HTTP Error!")
 		return (None, None)
 	return (connection, None)
 
@@ -240,27 +240,12 @@ def sendGold(connection, gold, chain):
 	
 	hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 	data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
-
-	msg = "Nonce: " + hex(gold.nonce)[2:]
-	msg += " (FPGA%d) " % chain
-	#print "Hexnonce: ", hexnonce
-	#print "Original Data: " + gold.job.data
-	#print "Nonced Data: " + data
-
+	
 	#rpc_lock.acquire()
 	(connection, accepted) = getwork(connection, data)
 	#rpc_lock.release()
-	if accepted is not None:
-		if accepted == True:
-			count_accepted[chain] += 1
-			msg += "accepted!"
-		else:
-			count_rejected[chain] += 1
-			msg += "_rejected_"
-	else:
-		count_error[chain] += 1
-		msg += "error"
-	message(msg)
+	
+	logger.reportFound(hex(gold.nonce)[2:], accepted, chain)
 	return connection
 	
 
@@ -283,7 +268,7 @@ def getworkloop(chain):
 				jobqueue[chain].put(job)
 				last_job = time.time()
 			else:
-				message("Error getting work for FPGA%d! Retrying..." % chain)
+				logger.log("Error getting work for FPGA%d! Retrying..." % chain)
 				last_job = None
 
 		gold = None
@@ -337,41 +322,7 @@ def mineloop(chain):
 				try:
 					goldqueue[chain].put(gold, block=True, timeout=10)
 				except Full:
-					message("Queue error for FPGA%d! Lost a share!")
-
-				
-def format_time(secs):
-	mins = int(secs/60)
-	hours = int(mins/60)
-	secs -= mins*60
-	mins -= hours*60
-	return "%d:%02d:%02d" % (hours, mins, secs)
-	
-def format_rate(secs, shares):
-	hash_rate = shares * pow(2, 32) / secs
-	
-	prefix = ''
-	if hash_rate > 1000:
-		hash_rate /= 1000
-		prefix = 'k'
-	if hash_rate > 1000:
-		hash_rate /= 1000
-		prefix = 'M'
-	if hash_rate > 1000:
-		hash_rate /= 1000
-		prefix = 'G'
-	
-	return "%.2f %sH/s" % (hash_rate, prefix)
-
-def message(msg, newline=True):
-	#msg = msg + "\r"
-	print_lock.acquire()
-	#if newline:
-	#	print ""
-	#print msg,
-	print msg
-	print_lock.release()
-
+					logger.log("Queue error for FPGA%d! Lost a share!" % chain)
 
 proto = "http"
 if settings.pool is None:
@@ -394,6 +345,8 @@ count_accepted = [0, 0]
 count_rejected = [0, 0]
 count_error = [0, 0]
 
+logger = ConsoleLogger(settings.chain, True)
+
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 	ft232r.open(settings.devicenum, portlist)
@@ -403,7 +356,7 @@ with FT232R() as ft232r:
 	elif settings.chain == 2:
 		chain_list = [0, 1]
 	else:
-		print "ERROR: Invalid chain option!"
+		logger.log("ERROR: Invalid chain option!")
 		parser.print_usage()
 		exit()
 	
@@ -412,16 +365,16 @@ with FT232R() as ft232r:
 	for chain in chain_list:
 		jtag.append(JTAG(ft232r, portlist.chain_portlist(chain), chain))
 		
-		print "Discovering JTAG chain %d ..." % chain
+		logger.reportDebug("Discovering JTAG chain %d ..." % chain)
 		jtag[chain].detect()
 		
-		print "Found %i devices ..." % jtag[chain].deviceCount
+		logger.reportDebug("Found %i devices ..." % jtag[chain].deviceCount)
 
 		for idcode in jtag[chain].idcodes:
-			print "FPGA", fpga_num, ":",
-			print JTAG.decodeIdcode(idcode)
+			msg = "FPGA" + str(chain) + ": "
+			msg += JTAG.decodeIdcode(idcode)
+			logger.reportDebug(msg)
 			fpga_num += 1
-		print ""
 	
 	getworkthread = []
 	minethread = []
@@ -431,7 +384,6 @@ with FT232R() as ft232r:
 	
 	ft232r_lock = Lock()
 	rpc_lock = Lock()
-	print_lock = Lock()
 	
 	for chain in chain_list:
 		jobqueue.append(Queue())
@@ -449,14 +401,7 @@ with FT232R() as ft232r:
 		
 		time.sleep(settings.getwork_interval/2)
 		
-	start_time = time.time()
 	
 	while True:
-		time.sleep(5)
-		time_string = format_time(time.time()-start_time)
-		rate_string = format_rate(time.time()-start_time, sum(count_accepted)+sum(count_rejected))
-		msg = "[%s] " % time_string
-		for chain in chain_list:
-			msg += "FPGA%d: [%d/%d/%d] " % (chain, count_accepted[chain], count_rejected[chain], count_error[chain])
-		msg += "[%s]" % rate_string
-		message(msg, False)
+		time.sleep(1)
+		logger.updateStatus()
