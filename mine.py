@@ -177,17 +177,6 @@ def fpgaWriteJob(jtag, job):
 	#print "It took %.1f seconds to write data." % (time.time() - start_time)
 	message("Job data loaded for FPGA%d." % jtag.chain)
 
-# 
-#def readNonce(jtag):
-#	jtag.singleDeviceInstruction(jtag.deviceCount-1, USER_INSTRUCTION)
-#
-#	data = jtag.shiftDR(jtag.deviceCount-1, int2bits(0, 13))
-#	nonce = bits2int(data)
-#
-#	jtag.tapReset()
-#
-#	return "%.04X" % nonce
-
 def connect(proto, host, timeout):
 	connector = httplib.HTTPSConnection if proto == 'https' else httplib.HTTPConnection
 
@@ -258,9 +247,9 @@ def sendGold(connection, gold, chain):
 	#print "Original Data: " + gold.job.data
 	#print "Nonced Data: " + data
 
-	rpc_lock.acquire()
+	#rpc_lock.acquire()
 	(connection, accepted) = getwork(connection, data)
-	rpc_lock.release()
+	#rpc_lock.release()
 	if accepted is not None:
 		if accepted == True:
 			count_accepted[chain] += 1
@@ -283,9 +272,9 @@ def getworkloop(chain):
 		#time.sleep(0.1)
 
 		if last_job is None or (time.time() - last_job) > settings.getwork_interval:
-			rpc_lock.acquire()
+			#rpc_lock.acquire()
 			(connection, work) = getwork(connection)
-			rpc_lock.release()
+			#rpc_lock.release()
 
 			if work is not None:
 				job = Object()
@@ -457,6 +446,8 @@ with FT232R() as ft232r:
 		minethread.append(Thread(target=mineloop, args=(chain,)))
 		minethread[chain].daemon = True
 		minethread[chain].start()
+		
+		time.sleep(settings.getwork_interval/2)
 		
 	start_time = time.time()
 	
