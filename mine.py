@@ -253,7 +253,16 @@ def sendGold(connection, gold, chain):
 
 def getworkloop(chain):
 	connection = None
-	last_job = None
+	(connection, work) = getwork(connection)
+	if work is not None:
+		job = Object()
+		job.midstate = work['midstate']
+		job.data = work['data']
+		jobqueue[chain].put(job)
+		if chain > 0:
+			last_job = time.time() + settings.getwork_interval/2
+		else:
+			last_job = time.time()
 
 	while True:
 		#time.sleep(0.1)
@@ -400,8 +409,6 @@ with FT232R() as ft232r:
 		minethread.append(Thread(target=mineloop, args=(chain,)))
 		minethread[chain].daemon = True
 		minethread[chain].start()
-		
-		time.sleep(settings.getwork_interval/2)
 		
 	
 	while True:
