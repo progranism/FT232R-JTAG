@@ -114,7 +114,7 @@ class ConsoleLogger(object):
             status = '[%sH/s]' % formatNumber(self.getRate()/1000)
             if self.verbose:
                 for chain in self.chain_list:
-                    status += ' [0: %d/%d]' % (self.accepted[chain], self.invalid[chain])
+                    status += ' [%d/%d]' % (self.accepted[chain], self.invalid[chain])
             else:
                 status += ' [%d/%d]' % (sum(self.accepted), sum(self.invalid))
             self.say(status)

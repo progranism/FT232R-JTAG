@@ -21,11 +21,13 @@ parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
 parser.add_option("-c", "--chain", type="int", dest="chain", default=0,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 0)")
 parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=20,
-						help="Getwork interval in seconds (default 20)")
+                  help="Getwork interval in seconds (default 20)")
+pparser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
+                  help="Verbose logging")
 parser.add_option("-p", "--pool", type="str", dest="pool",
                   help="URL for the pool, e.g. pool.com:8337")
 parser.add_option("-u", "--user", type="str", dest="user",
-				  help="Username and password for the pool, e.g. user:pass")
+                  help="Username and password for the pool, e.g. user:pass")
 settings, args = parser.parse_args()
 
 # Socket wrapper to enable socket.TCP_NODELAY and KEEPALIVE
