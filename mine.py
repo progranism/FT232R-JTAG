@@ -10,6 +10,9 @@ from Queue import Queue, Empty
 import httplib
 import socket
 
+NUM_RETRIES = 5
+USER_INSTRUCTION = 0b000010
+
 # Option parsing:
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] -p <pool-url> -u <user:pass>")
 parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
@@ -17,9 +20,9 @@ parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
 parser.add_option("-c", "--chain", type="int", dest="chain", default=0,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 0)")
 parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=20,
-						help="Getwork interval in seconds")
+						help="Getwork interval in seconds (default 20)")
 parser.add_option("-p", "--pool", type="str", dest="pool",
-                  help="URL for the pool, e.g. mining.eligius.st:8337")
+                  help="URL for the pool, e.g. pool.com:8337")
 parser.add_option("-u", "--user", type="str", dest="user",
 				  help="Username and password for the pool, e.g. user:pass")
 settings, args = parser.parse_args()
@@ -169,12 +172,9 @@ def fpgaWriteJob(jtag, job):
 	#print "It took %f seconds to record async data." % (time.time() - start_time)
 
 	start_time = time.time()
-	
 	ft232r.flush()
 
 	#print "It took %.1f seconds to write data." % (time.time() - start_time)
-	
-	
 	message("Job data loaded for FPGA%d." % jtag.chain)
 
 # 
@@ -197,10 +197,10 @@ def request(connection, url, headers, data=None):
 	result = response = None
 
 	try:
-		#if data is not None:
-		connection.request('POST', url, data, headers)
-		#else:
-			#connection.request('POST', url, headers=headers)
+		if data is not None:
+			connection.request('POST', url, data, headers)
+		else:
+			connection.request('GET', url, headers=headers)
 
 		response = connection.getresponse()
 
@@ -226,24 +226,23 @@ def getwork(connection, data=None):
 	try:
 		if not connection:
 			connection = connect(proto, host, timeout)
+			#connection.set_debuglevel(1)
 		postdata['params'] = [data] if data is not None else []
 		(connection, result) = request(connection, '/', headers, dumps(postdata))
-
+		#message(result)
 		return (connection, result['result'])
 	except NotAuthorized:
 		failure('Wrong username or password.')
 	except RPCError as e:
 		#print e
 		return (connection, e)
-	except IOError as (errno, strerror):
-		message("I/O Error:", strerror)
+	except IOError:
+		message("IOError!")
 	except ValueError:
 		message("ValueError!")
 	except httplib.HTTPException:
-		message("HTTP Error!")
+		#message("HTTP Error!")
 		return (None, None)
-		
-	
 	return (connection, None)
 
 def sendGold(connection, gold, chain):
@@ -259,7 +258,9 @@ def sendGold(connection, gold, chain):
 	#print "Original Data: " + gold.job.data
 	#print "Nonced Data: " + data
 
+	rpc_lock.acquire()
 	(connection, accepted) = getwork(connection, data)
+	rpc_lock.release()
 	if accepted is not None:
 		if accepted == True:
 			count_accepted[chain] += 1
@@ -279,11 +280,9 @@ def getworkloop(chain):
 	last_job = None
 
 	while True:
-		time.sleep(0.1)
+		#time.sleep(0.1)
 
 		if last_job is None or (time.time() - last_job) > settings.getwork_interval:
-			last_job = time.time()
-
 			rpc_lock.acquire()
 			(connection, work) = getwork(connection)
 			rpc_lock.release()
@@ -292,10 +291,11 @@ def getworkloop(chain):
 				job = Object()
 				job.midstate = work['midstate']
 				job.data = work['data']
-
 				jobqueue[chain].put(job)
+				last_job = time.time()
 			else:
-				last_job = time.time() - settings.getwork_interval + 2
+				message("Error getting work for FPGA%d! Retrying..." % chain)
+				last_job = None
 
 		gold = None
 		try:
@@ -304,19 +304,18 @@ def getworkloop(chain):
 			gold = None
 
 		if gold is not None:
-			rpc_lock.acquire()
 			#print "SUBMITTING GOLDEN TICKET"
+			retries_left = NUM_RETRIES
 			connection = sendGold(connection, gold, chain)
-			if connection is None:
+			while connection is None and retries_left > 0:
 				connection = sendGold(connection, gold, chain)
-			rpc_lock.release()
-
+				retries_left -= 1
 
 def mineloop(chain):
 	current_job = None
 	
 	while True:
-		time.sleep(0.1)
+		#time.sleep(0.1)
 
 		job = None
 
@@ -346,7 +345,10 @@ def mineloop(chain):
 				gold = Object()
 				gold.job = current_job
 				gold.nonce = nonce
-				goldqueue[chain].put(gold)
+				try:
+					goldqueue[chain].put(gold, block=True, timeout=10)
+				except Full:
+					message("Queue error for FPGA%d! Lost a share!")
 
 				
 def format_time(secs):
@@ -380,8 +382,7 @@ def message(msg, newline=True):
 	#print msg,
 	print msg
 	print_lock.release()
-	
-USER_INSTRUCTION = 0b000010
+
 
 proto = "http"
 if settings.pool is None:
@@ -429,7 +430,7 @@ with FT232R() as ft232r:
 
 		for idcode in jtag[chain].idcodes:
 			print "FPGA", fpga_num, ":",
-			JTAG.decodeIdcode(idcode)
+			print JTAG.decodeIdcode(idcode)
 			fpga_num += 1
 		print ""
 	

@@ -35,7 +35,7 @@ class JTAG():
 		self.current_part = 0
 		self._tckcount = 0
 		self.portlist = portlist
-		self.debug = 0
+		self.debug = 1
 
 		self.tap = TAP(self.jtagClock)
 	
@@ -157,10 +157,13 @@ class JTAG():
 		print "Pre-processing..."
 		# Pre-process
 		# TODO: Some way to cache this...
-		start_time = time.time()
 		chunk = ""
 		chunks = []
 		CHUNK_SIZE = 4096*4
+		bytes_processed = 0
+		
+		start_time = time.time()
+		last_update = 0
 
 		for b in data[:-1]:
 			d = ord(b)
@@ -172,6 +175,12 @@ class JTAG():
 			if len(chunk) >= CHUNK_SIZE:
 				chunks.append(chunk)
 				chunk = ""
+			
+			bytes_processed += 1
+			
+			if 1:#(time.time() - last_update) > 5 and progressCallback:
+				progressCallback(start_time, time.time(), bytes_processed, bytetotal)
+				last_update = time.time()
 
 		if len(chunk) > 0:
 			chunks.append(chunk)
@@ -184,12 +193,16 @@ class JTAG():
 		for i in range(self.current_part):
 			last_bits.append(0)
 
+		progressCallback(start_time, time.time(), bytes_processed, bytetotal)
+		
+		print ""
 		print "Processed in %d secs." % (time.time() - start_time)
 		self.ft232r._setAsyncMode()
 		
 		print "Writing..."
 		written = 0
 		start_time = time.time()
+		last_update = 0
 		
 		for chunk in chunks:
 			wrote = self.ft232r.handle.write(chunk)
@@ -197,8 +210,9 @@ class JTAG():
 				raise WriteError()
 			written += len(chunk) / 16
 			
-			if (written % (16 * 1024)) == 0 and progressCallback:
+			if time.time() > last_update + 5 and progressCallback:
 				progressCallback(start_time, time.time(), written, bytetotal)
+				last_update = time.time()
 		
 		progressCallback(start_time, time.time(), written, bytetotal)
 		
@@ -354,14 +368,14 @@ class JTAG():
 	@staticmethod
 	def decodeIdcode(idcode):
 		if (idcode & 1) != 1:
-			print "Warning: Bit 0 of IDCODE is not 1. Not a valid Xilinx IDCODE."
+			return "Warning: Bit 0 of IDCODE is not 1. Not a valid Xilinx IDCODE."
 
 		manuf = (idcode >> 1) & 0x07ff
 		size = (idcode >> 12) & 0x01ff
 		family = (idcode >> 21) & 0x007f
 		rev = (idcode >> 28) & 0x000f
 
-		print "Device ID: %.8X" % idcode
+		return "Device ID: %.8X" % idcode
 		#print "Manuf: %x, Part Size: %x, Family Code: %x, Revision: %0d" % (manuf, size, family, rev)
 		
 	

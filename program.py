@@ -23,7 +23,7 @@ def programBitstream(ft232r, chain, bitfile):
 	print "Found %i devices ...\n" % jtag.deviceCount
 
 	for idcode in jtag.idcodes:
-		JTAG.decodeIdcode(idcode)
+		print JTAG.decodeIdcode(idcode)
 	
 	print ""
 	print "Beginning programming..."
