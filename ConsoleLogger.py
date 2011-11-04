@@ -52,7 +52,7 @@ class ConsoleLogger(object):
         self.chain = chain
         if chain == 2:
             self.chain_list = [0, 1]
-        elif chain > 0 and chain < 2:
+        elif chain >= 0 and chain < 2:
             self.chain_list = [chain]
         else:
             Exception('Invalid chain option (%d)!' % chain)
@@ -114,7 +114,9 @@ class ConsoleLogger(object):
             status = '[%sH/s]' % formatNumber(self.getRate()/1000)
             if self.verbose:
                 for chain in self.chain_list:
-                    status += ' [%d/%d]' % (self.accepted[chain], self.invalid[chain])
+                    status += ' [FPGA%d: %d/%d]' % (chain, self.accepted[chain], self.invalid[chain])
+                status += ' [%d nonces/' % (sum(self.accepted)+sum(self.invalid))
+                status += '%d min]' % ((time()-self.start_time)/60)
             else:
                 status += ' [%d/%d]' % (sum(self.accepted), sum(self.invalid))
             self.say(status)

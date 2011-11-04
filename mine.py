@@ -178,7 +178,7 @@ def fpgaWriteJob(jtag, job):
 	ft232r.flush()
 
 	#print "It took %.1f seconds to write data." % (time.time() - start_time)
-	logger.reportDebug("Job data loaded for FPGA%d." % jtag.chain)
+	logger.reportDebug("(FPGA%d) Job data loaded" % jtag.chain)
 
 def connect(proto, host, timeout):
 	connector = httplib.HTTPSConnection if proto == 'https' else httplib.HTTPConnection
@@ -263,6 +263,10 @@ def getworkloop(chain):
 			last_job = time.time() + settings.getwork_interval/2
 		else:
 			last_job = time.time()
+	elif chain > 0:
+		last_job = time.time() - settings.getwork_interval/2
+	else:
+		last_job = time.time() - settings.getwork_interval
 
 	while True:
 		#time.sleep(0.1)
@@ -279,7 +283,7 @@ def getworkloop(chain):
 				jobqueue[chain].put(job)
 				last_job = time.time()
 			else:
-				logger.log("Error getting work for FPGA%d! Retrying..." % chain)
+				logger.log("(FPGA%d) Error getting work! Retrying..." % chain)
 				last_job = None
 
 		gold = None
@@ -289,7 +293,6 @@ def getworkloop(chain):
 			gold = None
 
 		if gold is not None:
-			#print "SUBMITTING GOLDEN TICKET"
 			retries_left = NUM_RETRIES
 			connection = sendGold(connection, gold, chain)
 			while connection is None and retries_left > 0:
@@ -301,6 +304,23 @@ def mineloop(chain):
 	
 	while True:
 		#time.sleep(0.1)
+		
+		if current_job is not None:
+			ft232r_lock.acquire()
+			#t1 = time.time()
+			nonce = fpgaReadNonce(jtag[chain])
+			ft232r_lock.release()
+			#print "Reading took %i seconds." % (time.time() - t1)
+
+			if nonce is not None:
+				logger.reportDebug("(FPGA%d) Golden nonce found" % chain)
+				gold = Object()
+				gold.job = current_job
+				gold.nonce = nonce
+				try:
+					goldqueue[chain].put(gold, block=True, timeout=10)
+				except Full:
+					logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
 
 		job = None
 
@@ -313,27 +333,10 @@ def mineloop(chain):
 			ft232r_lock.acquire()
 			#t1 = time.time()
 			fpgaWriteJob(jtag[chain], job)
-			fpgaClearQueue(jtag[chain])
+			#fpgaClearQueue(jtag[chain])
 			ft232r_lock.release()
 			current_job = job
 			#print "Writing took %i seconds." % (time.time() - t1)
-		
-		if current_job is not None:
-			ft232r_lock.acquire()
-			#t1 = time.time()
-			nonce = fpgaReadNonce(jtag[chain])
-			ft232r_lock.release()
-			#print "Reading took %i seconds." % (time.time() - t1)
-
-			if nonce is not None:
-				#print "FOUND GOLDEN TICKET"
-				gold = Object()
-				gold.job = current_job
-				gold.nonce = nonce
-				try:
-					goldqueue[chain].put(gold, block=True, timeout=10)
-				except Full:
-					logger.log("Queue error for FPGA%d! Lost a share!" % chain)
 
 proto = "http"
 if settings.pool is None:
@@ -361,6 +364,7 @@ logger = ConsoleLogger(settings.chain, settings.verbose)
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 	ft232r.open(settings.devicenum, portlist)
+	logger.log("Device %d opened" % settings.devicenum)
 	
 	if settings.chain == 0 or settings.chain == 1:
 		chain_list = [settings.chain]
@@ -387,6 +391,8 @@ with FT232R() as ft232r:
 			logger.reportDebug(msg)
 			fpga_num += 1
 	
+	logger.log("Connected to %d FPGAs" % fpga_num)
+	
 	getworkthread = []
 	minethread = []
 	
@@ -409,7 +415,6 @@ with FT232R() as ft232r:
 		minethread.append(Thread(target=mineloop, args=(chain,)))
 		minethread[chain].daemon = True
 		minethread[chain].start()
-		
 	
 	while True:
 		time.sleep(1)
