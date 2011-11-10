@@ -232,9 +232,8 @@ def getwork(connection, data=None):
 	except ValueError:
 		logger.reportDebug("ValueError!")
 	except httplib.HTTPException:
-		#logger.reportDebug("HTTP Error!")
-		return (None, None)
-	return (connection, None)
+		logger.reportDebug("HTTP Error!")
+	return (None, None)
 
 def sendGold(connection, gold, chain):
 	global count_accepted
@@ -254,6 +253,8 @@ def sendGold(connection, gold, chain):
 def getworkloop(chain):
 	connection = None
 	(connection, work) = getwork(connection)
+	if connection is not None:
+		logger.reportConnected(True)
 	if work is not None:
 		job = Object()
 		job.midstate = work['midstate']
@@ -304,6 +305,20 @@ def mineloop(chain):
 	
 	while True:
 		#time.sleep(0.1)
+		job = None
+		try:
+			job = jobqueue[chain].get(False)
+		except Empty:
+			job = None
+		
+		if job is not None:
+			ft232r_lock.acquire()
+			#t1 = time.time()
+			fpgaWriteJob(jtag[chain], job)
+			#fpgaClearQueue(jtag[chain])
+			ft232r_lock.release()
+			current_job = job
+			#print "Writing took %i seconds." % (time.time() - t1)
 		
 		if current_job is not None:
 			ft232r_lock.acquire()
@@ -322,21 +337,6 @@ def mineloop(chain):
 				except Full:
 					logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
 
-		job = None
-
-		try:
-			job = jobqueue[chain].get(False)
-		except Empty:
-			job = None
-
-		if job is not None:
-			ft232r_lock.acquire()
-			#t1 = time.time()
-			fpgaWriteJob(jtag[chain], job)
-			#fpgaClearQueue(jtag[chain])
-			ft232r_lock.release()
-			current_job = job
-			#print "Writing took %i seconds." % (time.time() - t1)
 
 proto = "http"
 if settings.pool is None:
@@ -355,9 +355,9 @@ headers = {"User-Agent": 'FPGAMiner',
           }
 timeout = 5
 
-count_accepted = [0, 0]
-count_rejected = [0, 0]
-count_error = [0, 0]
+count_accepted = []
+count_rejected = []
+count_error = []
 
 logger = ConsoleLogger(settings.chain, settings.verbose)
 
@@ -378,12 +378,17 @@ with FT232R() as ft232r:
 	jtag = []
 	fpga_num = 0
 	for chain in chain_list:
+		count_accepted.append(0)
+		count_rejected.append(0)
+		count_error.append(0)
+		
 		jtag.append(JTAG(ft232r, portlist.chain_portlist(chain), chain))
 		
 		logger.reportDebug("Discovering JTAG chain %d ..." % chain)
 		jtag[chain].detect()
 		
-		logger.reportDebug("Found %i devices ..." % jtag[chain].deviceCount)
+		logger.reportDebug("Found %i device%s ..." % (jtag[chain].deviceCount,
+			's' if jtag[chain].deviceCount != 1 else ''))
 
 		for idcode in jtag[chain].idcodes:
 			msg = "FPGA" + str(chain) + ": "

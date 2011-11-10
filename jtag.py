@@ -35,7 +35,7 @@ class JTAG():
 		self.current_part = 0
 		self._tckcount = 0
 		self.portlist = portlist
-		self.debug = 1
+		self.debug = 0
 
 		self.tap = TAP(self.jtagClock)
 	
@@ -178,7 +178,7 @@ class JTAG():
 			
 			bytes_processed += 1
 			
-			if 1:#(time.time() - last_update) > 5 and progressCallback:
+			if (time.time() - last_update) > 5:
 				progressCallback(start_time, time.time(), bytes_processed, bytetotal)
 				last_update = time.time()
 
