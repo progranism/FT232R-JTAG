@@ -19,10 +19,10 @@ class UnknownIDCode(Exception):
 	def __str__(self):
 		return repr(self.idcode)
 
-# A dictionary, which allows us to look up a jtag device's IDCODE and see
-# how big its Instruction Register is (how many bits). This is entered manually
-# but could, in the future, be read automatically from a database of BSDL files.
+# LUT for instruction register length based on ID code:
 irlength_lut = {0x403d093: 6, 0x401d093: 6, 0x4008093: 6, 0x5057093: 16, 0x5059093: 16};
+# LUT for device name based on ID code:
+name_lut = {0x403d093: 'Spartan 6 LX150T', 0x401d093: 'Spartan 6 LX150'}
 
 class JTAG():
 	def __init__(self, ft232r, portlist, chain):
@@ -375,7 +375,7 @@ class JTAG():
 		family = (idcode >> 21) & 0x007f
 		rev = (idcode >> 28) & 0x000f
 
-		return "Device ID: %.8X" % idcode
+		return name_lut[idcode & 0xFFFFFFF]
 		#print "Manuf: %x, Part Size: %x, Family Code: %x, Revision: %0d" % (manuf, size, family, rev)
 		
 	
