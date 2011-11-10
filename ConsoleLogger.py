@@ -23,6 +23,7 @@
 import sys
 from time import time
 from datetime import datetime
+from threading import Lock
 
 def formatNumber(n):
     """Format a positive integer in a more readable fashion."""
@@ -44,7 +45,7 @@ def formatNumber(n):
 class ConsoleLogger(object):
     """This class will handle printing messages to the console."""
     
-    TIME_FORMAT = '[%d/%m/%Y %H:%M:%S]'
+    TIME_FORMAT = '[%Y-%m-%d %H:%M:%S]'
     
     UPDATE_TIME = 1.0
     
@@ -64,6 +65,8 @@ class ConsoleLogger(object):
         self.invalid = [0, 0]
         self.lineLength = 0
         self.connectionType = None
+        self.connected = False
+        self.print_lock = Lock()
     
     def getRate(self):
         shares = sum(self.accepted)+sum(self.invalid)
@@ -85,20 +88,22 @@ class ConsoleLogger(object):
             accepted = False
 
         if self.verbose:
-            self.log('(FPGA%d) Result %s %s' % (chain, hash,
-                'accepted' if accepted else 'rejected'))
+            self.log('%s %s FPGA %d' % ('accepted' if accepted else 'rejected', 
+				hash, chain))
         else:
-            self.log('Result: %s %s' % (hash,
-                'accepted' if accepted else 'rejected'))
+            self.log('%s %s' % ('accepted' if accepted else 'rejected', 
+				hash))
             
     def reportMsg(self, message):
         self.log(('MSG: ' + message), True, True)
     
     def reportConnected(self, connected):
-        if connected:
+        if connected and not self.connected:
             self.log('Connected to server')
-        else:
+            self.connected = True
+        elif not connected and self.connected:
             self.log('Disconnected from server')
+            self.connected = False
     
     def reportConnectionFailed(self):
         self.log('Failed to connect, retrying...')
@@ -123,31 +128,36 @@ class ConsoleLogger(object):
             self.lastUpdate = time()
         
     def say(self, message, newLine=False, hideTimestamp=False):
-        #add new line if requested
-        if newLine:
-            message += '\n'
-            if hideTimestamp:
-                timestamp = ''
-            else:
-                timestamp = datetime.now().strftime(self.TIME_FORMAT) + ' '
-                
-            message = timestamp + message
-        
-        #erase the previous line
-        if self.lineLength > 0:
-            sys.stdout.write('\b \b' * self.lineLength)
-            sys.stdout.write(' ' * self.lineLength)
-            sys.stdout.write('\b \b' * self.lineLength)
+		#add new line if requested
+		if newLine:
+			message += '\n'
+			if hideTimestamp:
+				timestamp = ''
+			else:
+				timestamp = datetime.now().strftime(self.TIME_FORMAT) + ' '
+				
+			message = timestamp + message
+		
+		#wait until nothing else is being printed
+		self.print_lock.acquire()
+		
+		#erase the previous line
+		if self.lineLength > 0:
+			sys.stdout.write('\b \b' * self.lineLength)
+			sys.stdout.write(' ' * self.lineLength)
+			sys.stdout.write('\b \b' * self.lineLength)
 
-        #print the line
-        sys.stdout.write(message)
-        sys.stdout.flush()
-        
-        #cache the current line length
-        if newLine:
-            self.lineLength = 0
-        else:
-            self.lineLength = len(message)
+		#print the line
+		sys.stdout.write(message)
+		sys.stdout.flush()
+		
+		self.print_lock.release()
+		
+		#cache the current line length
+		if newLine:
+			self.lineLength = 0
+		else:
+			self.lineLength = len(message)
 
     def log(self, message, update=True, hideTimestamp=False):
         self.say(message, True, hideTimestamp)
