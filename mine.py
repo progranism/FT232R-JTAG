@@ -144,6 +144,8 @@ def fpgaWriteJob(jtag, job):
 	# The first 64 bytes of data are already hashed (hence midstate),
 	# so we skip that. Of the last 64 bytes, 52 bytes are constant and
 	# not needed by the FPGA.
+	start_time = time.time()
+	
 	midstate = hexstr2array(job.midstate)
 	data = hexstr2array(job.data)[64:64+12]
 
@@ -153,7 +155,7 @@ def fpgaWriteJob(jtag, job):
 
 	#print "Loading job data..."
 
-	start_time = time.time()
+	#start_time = time.time()
 	#jtag._setAsyncMode()
 	#jtag.async_record = ""
 	
@@ -167,18 +169,18 @@ def fpgaWriteJob(jtag, job):
 
 		if i != 0:
 			x = 0x100 | x
-
+			
 		jtag.shift_dr(int2bits(x, 13))
 	
 	jtag.tap.reset()
 
 	#print "It took %f seconds to record async data." % (time.time() - start_time)
 
-	start_time = time.time()
 	ft232r.flush()
 
 	#print "It took %.1f seconds to write data." % (time.time() - start_time)
-	logger.reportDebug("(FPGA%d) Job data loaded" % jtag.chain)
+	
+	logger.reportDebug("(FPGA%d) Job data loaded in %f seconds" % (jtag.chain, (time.time() - start_time)))
 
 def connect(proto, host, timeout):
 	connector = httplib.HTTPSConnection if proto == 'https' else httplib.HTTPConnection
@@ -232,7 +234,8 @@ def getwork(connection, data=None):
 	except ValueError:
 		logger.reportDebug("ValueError!")
 	except httplib.HTTPException:
-		logger.reportDebug("HTTP Error!")
+		#logger.reportDebug("HTTP Error!")
+		pass
 	return (None, None)
 
 def sendGold(connection, gold, chain):
@@ -314,9 +317,20 @@ def mineloop(chain):
 		if job is not None:
 			ft232r_lock.acquire()
 			#t1 = time.time()
+			if current_job is not None:
+				nonce = fpgaReadNonce(jtag[chain])
 			fpgaWriteJob(jtag[chain], job)
 			#fpgaClearQueue(jtag[chain])
 			ft232r_lock.release()
+			if current_job is not None and nonce is not None:
+				#logger.reportDebug("(FPGA%d) Golden nonce found" % chain)
+				gold = Object()
+				gold.job = current_job
+				gold.nonce = nonce
+				try:
+					goldqueue[chain].put(gold, block=True, timeout=10)
+				except Full:
+					logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
 			current_job = job
 			#print "Writing took %i seconds." % (time.time() - t1)
 		
