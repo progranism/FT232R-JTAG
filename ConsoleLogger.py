@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 # Copyright (C) 2011 by jedi95 <jedi95@gmail.com> and 
 #                       CFSworks <CFSworks@gmail.com>
 #                       fizzisist <fizzisist@fpgamining.com>
@@ -49,6 +51,9 @@ class ConsoleLogger(object):
     
     UPDATE_TIME = 1.0
     
+    SPARKLINE_LENGTH = 10 # number of bins to display of the sparkline
+    SPARKLINE_BINSIZE = 5 # number of mins for each bin of the sparkline
+    
     def __init__(self, chain=0, verbose=False): 
         self.chain = chain
         if chain == 2:
@@ -60,9 +65,12 @@ class ConsoleLogger(object):
         self.verbose = verbose
         self.lastUpdate = time() - 1
         self.start_time = time()
-        self.rate = 0
+        self.rate = [0]
+        self.last_rate_update = time()
         self.accepted = [0, 0]
         self.invalid = [0, 0]
+        self.recent_shares = 0
+        self.sparkline = ''
         self.lineLength = 0
         self.connectionType = None
         self.connected = False
@@ -72,7 +80,29 @@ class ConsoleLogger(object):
         shares = sum(self.accepted)+sum(self.invalid)
         secs = time() - self.start_time
         rate = shares * pow(2, 32) / secs
+        if time() > self.last_rate_update + self.SPARKLINE_BINSIZE * 60:
+            recent_secs = time() - self.last_rate_update
+            recent_rate = self.recent_shares * pow(2, 32) / recent_secs
+            if len(self.rate) < self.SPARKLINE_LENGTH:
+                self.rate.append(recent_rate)
+            else:
+                self.rate.pop(0)
+                self.rate.append(recent_rate)
+            self.recent_shares = 0
+            self.sparkline = self.makeSparkline()
+            self.last_rate_update = time()
         return rate
+        
+    def makeSparkline(self):
+        '''Make a simple graph of hashrate over time.
+        Inspired by: https://github.com/holman/spark
+        '''
+        ticks = (u'▁', u'▂', u'▃', u'▄', u'▅', u'▆', u'▇', u'█')
+        sparkline = ''
+        for rate in self.rate:
+            rate = int(len(ticks) * rate / max(self.rate))
+            sparkline += ticks[rate-1]
+        return sparkline
         
     def reportType(self, type):
         self.connectionType = type
@@ -86,13 +116,15 @@ class ConsoleLogger(object):
         else:
             self.invalid[chain] += 1
             accepted = False
-
+            
+        self.recent_shares += 1
+        
         if self.verbose:
-            self.log('%s %s FPGA %d' % ('accepted' if accepted else 'rejected', 
-				hash, chain))
+            self.log('(FPGA%d) %s %s' % (chain, 'accepted' if accepted else 'rejected', 
+                hash))
         else:
             self.log('%s %s' % ('accepted' if accepted else 'rejected', 
-				hash))
+                hash))
             
     def reportMsg(self, message):
         self.log(('MSG: ' + message), True, True)
@@ -124,40 +156,41 @@ class ConsoleLogger(object):
                 status += '%d min]' % ((time()-self.start_time)/60)
             else:
                 status += ' [%d/%d]' % (sum(self.accepted), sum(self.invalid))
+            status += ' ' + self.sparkline
             self.say(status)
             self.lastUpdate = time()
         
     def say(self, message, newLine=False, hideTimestamp=False):
-		#add new line if requested
-		if newLine:
-			message += '\n'
-			if hideTimestamp:
-				timestamp = ''
-			else:
-				timestamp = datetime.now().strftime(self.TIME_FORMAT) + ' '
-				
-			message = timestamp + message
-		
-		#wait until nothing else is being printed
-		self.print_lock.acquire()
-		
-		#erase the previous line
-		if self.lineLength > 0:
-			sys.stdout.write('\b \b' * self.lineLength)
-			sys.stdout.write(' ' * self.lineLength)
-			sys.stdout.write('\b \b' * self.lineLength)
+        #add new line if requested
+        if newLine:
+            message += '\n'
+            if hideTimestamp:
+                timestamp = ''
+            else:
+                timestamp = datetime.now().strftime(self.TIME_FORMAT) + ' '
+                
+            message = timestamp + message
+        
+        #wait until nothing else is being printed
+        self.print_lock.acquire()
+        
+        #erase the previous line
+        if self.lineLength > 0:
+            sys.stdout.write('\b \b' * self.lineLength)
+            sys.stdout.write(' ' * self.lineLength)
+            sys.stdout.write('\b \b' * self.lineLength)
 
-		#print the line
-		sys.stdout.write(message)
-		sys.stdout.flush()
-		
-		self.print_lock.release()
-		
-		#cache the current line length
-		if newLine:
-			self.lineLength = 0
-		else:
-			self.lineLength = len(message)
+        #print the line
+        sys.stdout.write(message)
+        sys.stdout.flush()
+        
+        self.print_lock.release()
+        
+        #cache the current line length
+        if newLine:
+            self.lineLength = 0
+        else:
+            self.lineLength = len(message)
 
     def log(self, message, update=True, hideTimestamp=False):
         self.say(message, True, hideTimestamp)
