@@ -238,7 +238,7 @@ class JTAG():
 		progressCallback(start_time, time.time(), written, bytetotal)
 		
 		print ""
-		print "Loaded bitstream in %d secs." % (time.time() - start_time)
+		print "Loaded data in %d secs." % (time.time() - start_time)
 		
 		self._log("Status: " + str(self.ft232r.handle.getStatus()))
 		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
@@ -255,6 +255,42 @@ class JTAG():
 		self.ft232r.flush()
 		self._log("Status: " + str(self.ft232r.handle.getStatus()))
 		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
+		
+	def load_bitstream(self, processed_bitstream, progressCallback=None):
+		self.tap.goto(TAP.SELECT_DR)
+		self.tap.goto(TAP.SHIFT_DR)
+		self.ft232r.flush()
+		
+		self.ft232r._setAsyncMode()
+		
+		written = 0
+		#start_time = time.time()
+		#last_update = 0
+		
+		for chunk in processed_bitstream.chunks:
+			wrote = self.ft232r.handle.write(chunk)
+			if wrote != len(chunk):
+				raise WriteError()
+			written += len(chunk) / 16
+			
+			#if time.time() > last_update + 5 and progressCallback:
+			#	progressCallback(start_time, time.time(), written, bytetotal)
+			#	last_update = time.time()
+		
+		#progressCallback(start_time, time.time(), written, bytetotal)
+		
+		#print ""
+		#print "Loaded data in %d secs." % (time.time() - start_time)
+		
+		self.ft232r._setSyncMode()
+		self.ft232r._purgeBuffers()
+		
+		for bit in processed_bitstream.last_bits[:-1]:
+			self.jtagClock(tdi=bit)
+		self.jtagClock(tdi=processed_bitstream.last_bits[-1], tms=1)
+		
+		self.tap.goto(TAP.IDLE)
+		self.ft232r.flush()
 	
 	def stressTest(self, testcount=100):
 		"""Run a stress test of the JTAG chain to make sure communications will run properly.

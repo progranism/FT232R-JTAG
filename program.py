@@ -21,9 +21,20 @@
 
 from ft232r import FT232R, FT232R_PortList
 from jtag import JTAG
-from BitstreamReader import BitFile, BitFileReadError
+from BitstreamReader import BitFile, BitFileReadError, BitFileMismatch
 import time
 from optparse import OptionParser
+from ConsoleLogger import ConsoleLogger
+
+# Option parsing:
+parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] <path-to-bitstream-file>")
+parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
+                  help="Device number, default 0 (only needed if you have more than one board)")
+parser.add_option("-c", "--chain", type="int", dest="chain", default=0,
+                  help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 0)")
+parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
+                  help="Verbose logging")
+settings, args = parser.parse_args()
 
 # LSB first
 def bits2int(bits):
@@ -36,29 +47,10 @@ def bitstreamProgress(start_time, now_time, written, total):
 	message = "Completed: %.1f%% [%.1f kB/s]\r" % (100.0 * written / total, 0.001 * written  / (now_time - start_time))
 	print message,
 
-def programBitstream(ft232r, chain, bitfile):
-	jtag = JTAG(ft232r, portlist.chain_portlist(chain), chain)
-	print "Discovering JTAG chain %d ..." % chain
-	jtag.detect()
-	
-	print "Found %i devices ...\n" % jtag.deviceCount
-
-	for idcode in jtag.idcodes:
-		print JTAG.decodeIdcode(idcode)
-	
-	print ""
-	print "Beginning programming..."
-	
+def programBitstream(ft232r, jtag, chain, processed_bitstream):
 	# Select the device
 	jtag.reset()
 	jtag.part(jtag.deviceCount-1)
-	
-	# Verify the IDCODE
-	jtag.instruction(0x09)
-	jtag.shift_ir()
-	if bits2int(jtag.read_dr([0]*32))  & 0x0FFFFFFF != bitfile.idcode:
-		print "ERROR: The specified bitstream was not designed for the attached device."
-		exit()
 	
 	# Load with BYPASS
 	jtag.instruction(0xFF)
@@ -88,7 +80,7 @@ def programBitstream(ft232r, chain, bitfile):
 	#bitfile.bitstream = bitfile.bitstream[0:5000] + chr(0x12) + bitfile.bitstream[5001:]
 
 	# Load bitstream into CFG_IN
-	jtag.bulk_shift_dr(bitfile.bitstream, bitstreamProgress)
+	jtag.load_bitstream(processed_bitstream)
 
 	# Load with JSTART
 	jtag.instruction(0x0C)
@@ -118,53 +110,78 @@ def programBitstream(ft232r, chain, bitfile):
 #		jtag.shift_dr([0])
 
 	ft232r.flush()
-	
-	print "Done!"
 
-
-# Option parsing:
-parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] <path-to-bitstream-file>")
-parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
-                  help="Device number, default 0 (only needed if you have more than one board)")
-parser.add_option("-c", "--chain", type="int", dest="chain", default=0,
-                  help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 0)")
-settings, args = parser.parse_args()
+logger = ConsoleLogger(settings.chain, settings.verbose)
 
 if len(args) == 0:
-	print "ERROR: No bitstream file specified!"
+	logger.log("ERROR: No bitstream file specified!")
 	parser.print_usage()
 	exit()
 	
 ### Bitfile ###
 bitfileName = args[0]
-print "Opening bitstream file:", bitfileName
+logger.log("Opening bitstream file: " + bitfileName)
 bitfile = None
 
 try:
-	with open(bitfileName, 'rb') as f:
-		bitfile = BitFile.read(f)
+	bitfile = BitFile.read(bitfileName)
 except BitFileReadError, e:
 	print e
 	exit()
 
-print "Bitstream file opened:"
-print "      Design Name:", bitfile.designname
-print "        Part Name:", bitfile.part
-print "             Date:", bitfile.date
-print "             Time:", bitfile.time
-print " Bitstream Length:", len(bitfile.bitstream)
-print ""
+logger.log("Bitstream file opened:")
+logger.log("      Design Name: %s" % bitfile.designname)
+logger.log("        Part Name: %s" % bitfile.part)
+logger.log("             Date: %s" % bitfile.date)
+logger.log("             Time: %s" % bitfile.time)
+logger.log(" Bitstream Length: %d" % len(bitfile.bitstream))
 
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 	ft232r.open(settings.devicenum, portlist)
 	
 	if settings.chain == 2:
-		programBitstream(ft232r, 0, bitfile)
-		programBitstream(ft232r, 1, bitfile)
+		chain_list = [0,1]
 	elif settings.chain == 0 or settings.chain == 1:
-		programBitstream(ft232r, settings.chain, bitfile)
+		chain_list = [settings.chain]
 	else:
-		print "ERROR: Invalid chain option!"
+		logger.log("ERROR: Invalid chain option!")
 		parser.print_usage()
 		exit()
+	
+	jtag = [None, None]
+	
+	for chain in chain_list:
+		jtag[chain] = JTAG(ft232r, portlist.chain_portlist(chain), chain)
+		logger.log("Discovering JTAG chain %d ..." % chain)
+		jtag[chain].detect()
+		
+		logger.log("Found %i device%s:" % (jtag[chain].deviceCount,
+		                                   's' if jtag[chain].deviceCount != 1 else ''))
+		
+		for idcode in jtag[chain].idcodes:
+			logger.log(JTAG.decodeIdcode(idcode))
+			if idcode & 0x0FFFFFFF != bitfile.idcode:
+				raise BitFileMismatch
+	
+	if bitfile.processed:
+		logger.log("Loading pre-processed bitstream...")
+		start_time = time.time()
+		processed_bitstreams = BitFile.load_processed(bitfileName)
+		logger.log("Loaded pre-processed bitstream in %f seconds" % (time.time() - start_time))
+	else:
+		logger.log("Pre-processing bitstream...")
+		start_time = time.time()
+		processed_bitstreams = BitFile.pre_process(bitfile.bitstream, jtag, chain_list)
+		logger.log("Pre-processed bitstream in %f seconds" % (time.time() - start_time))
+		logger.log("Saving pre-processed bitstream...")
+		start_time = time.time()
+		BitFile.save_processed(processed_bitstreams, bitfileName)
+		logger.log("Saved pre-processed bitstream in %f seconds" % (time.time() - start_time))
+	
+	logger.log("Beginning programming...")
+	for chain in chain_list:
+		logger.log("Programming FPGA %d..." % chain)
+		start_time = time.time()
+		programBitstream(ft232r, jtag[chain], chain, processed_bitstreams[chain])
+		logger.log("Programmed FPGA %d in %f seconds" % (chain, time.time() - start_time))

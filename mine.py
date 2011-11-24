@@ -248,7 +248,7 @@ def getwork(connection, data=None):
 	except NotAuthorized:
 		failure('Wrong username or password.')
 	except RPCError as e:
-		#print e
+		logger.reportDebug("RPCError! %s" % e)
 		return (connection, e)
 	except IOError:
 		logger.reportDebug("IOError!")
@@ -260,9 +260,6 @@ def getwork(connection, data=None):
 	return (None, None)
 
 def sendGold(connection, gold, chain):
-	global count_accepted
-	global count_rejected
-	
 	hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 	data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 	
@@ -301,13 +298,14 @@ def getworkloop(chain):
 			(connection, work) = getwork(connection)
 			#rpc_lock.release()
 
-			if work is not None:
+			
+			try:
 				job = Object()
 				job.midstate = work['midstate']
 				job.data = work['data']
 				jobqueue[chain].put(job)
 				last_job = time.time()
-			else:
+			except:
 				logger.log("(FPGA%d) Error getting work! Retrying..." % chain)
 				last_job = None
 
@@ -390,10 +388,6 @@ headers = {"User-Agent": 'FPGAMiner',
           }
 timeout = 5
 
-count_accepted = []
-count_rejected = []
-count_error = []
-
 logger = ConsoleLogger(settings.chain, settings.verbose)
 
 with FT232R() as ft232r:
@@ -413,10 +407,6 @@ with FT232R() as ft232r:
 	jtag = []
 	fpga_num = 0
 	for chain in chain_list:
-		count_accepted.append(0)
-		count_rejected.append(0)
-		count_error.append(0)
-		
 		jtag.append(JTAG(ft232r, portlist.chain_portlist(chain), chain))
 		
 		logger.reportDebug("Discovering JTAG chain %d ..." % chain)
@@ -442,6 +432,7 @@ with FT232R() as ft232r:
 	ft232r_lock = Lock()
 	rpc_lock = Lock()
 	
+	logger.start()
 	for chain in chain_list:
 		jobqueue.append(Queue())
 		goldqueue.append(Queue())
@@ -456,6 +447,22 @@ with FT232R() as ft232r:
 		minethread[chain].daemon = True
 		minethread[chain].start()
 	
-	while True:
-		time.sleep(1)
-		logger.updateStatus()
+	try:
+		while True:
+			time.sleep(1)
+			logger.updateStatus()
+			for chain in chain_list:
+				if not getworkthread[chain].isAlive():
+					logger.log("Restarting getworkthread for chain %d" % chain)
+					getworkthread[chain] = Thread(target=getworkloop, args=(chain,))
+					getworkthread[chain].daemon = True
+					getworkthread[chain].start()
+				if not minethread[chain].isAlive():
+					logger.log("Restarting minethread for chain %d" % chain)
+					minethread[chain] = Thread(target=mineloop, args=(chain,))
+					minethread[chain].daemon = True
+					minethread[chain].start()
+	except KeyboardInterrupt:
+		logger.log("Exiting...")
+		logger.printSummary(settings.devicenum)
+		exit()
