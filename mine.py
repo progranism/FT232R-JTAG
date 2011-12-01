@@ -390,64 +390,64 @@ timeout = 5
 
 logger = ConsoleLogger(settings.chain, settings.verbose)
 
-with FT232R() as ft232r:
-	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
-	ft232r.open(settings.devicenum, portlist)
-	logger.log("Device %d opened" % settings.devicenum)
-	
-	if settings.chain == 0 or settings.chain == 1:
-		chain_list = [settings.chain]
-	elif settings.chain == 2:
-		chain_list = [0, 1]
-	else:
-		logger.log("ERROR: Invalid chain option!")
-		parser.print_usage()
-		exit()
-	
-	jtag = []
-	fpga_num = 0
-	for chain in chain_list:
-		jtag.append(JTAG(ft232r, portlist.chain_portlist(chain), chain))
+try:
+	with FT232R() as ft232r:
+		portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
+		ft232r.open(settings.devicenum, portlist)
+		logger.log("Device %d opened" % settings.devicenum)
 		
-		logger.reportDebug("Discovering JTAG chain %d ..." % chain)
-		jtag[chain].detect()
+		if settings.chain == 0 or settings.chain == 1:
+			chain_list = [settings.chain]
+		elif settings.chain == 2:
+			chain_list = [0, 1]
+		else:
+			logger.log("ERROR: Invalid chain option!")
+			parser.print_usage()
+			exit()
 		
-		logger.reportDebug("Found %i device%s ..." % (jtag[chain].deviceCount,
-			's' if jtag[chain].deviceCount != 1 else ''))
+		jtag = []
+		fpga_num = 0
+		for chain in chain_list:
+			jtag.append(JTAG(ft232r, portlist.chain_portlist(chain), chain))
+			
+			logger.reportDebug("Discovering JTAG chain %d ..." % chain)
+			jtag[chain].detect()
+			
+			logger.reportDebug("Found %i device%s ..." % (jtag[chain].deviceCount,
+				's' if jtag[chain].deviceCount != 1 else ''))
 
-		for idcode in jtag[chain].idcodes:
-			msg = "FPGA" + str(chain) + ": "
-			msg += JTAG.decodeIdcode(idcode)
-			logger.reportDebug(msg)
-			fpga_num += 1
-	
-	logger.log("Connected to %d FPGAs" % fpga_num)
-	
-	getworkthread = []
-	minethread = []
-	
-	jobqueue = []
-	goldqueue = []
-	
-	ft232r_lock = Lock()
-	rpc_lock = Lock()
-	
-	logger.start()
-	for chain in chain_list:
-		jobqueue.append(Queue())
-		goldqueue.append(Queue())
+			for idcode in jtag[chain].idcodes:
+				msg = "FPGA" + str(chain) + ": "
+				msg += JTAG.decodeIdcode(idcode)
+				logger.reportDebug(msg)
+				fpga_num += 1
 		
-		# Start HTTP thread(s)
-		getworkthread.append(Thread(target=getworkloop, args=(chain,)))
-		getworkthread[chain].daemon = True
-		getworkthread[chain].start()
+		logger.log("Connected to %d FPGAs" % fpga_num)
 		
-		# Start mining thread(s)
-		minethread.append(Thread(target=mineloop, args=(chain,)))
-		minethread[chain].daemon = True
-		minethread[chain].start()
-	
-	try:
+		getworkthread = []
+		minethread = []
+		
+		jobqueue = []
+		goldqueue = []
+		
+		ft232r_lock = Lock()
+		rpc_lock = Lock()
+		
+		logger.start()
+		for chain in chain_list:
+			jobqueue.append(Queue())
+			goldqueue.append(Queue())
+			
+			# Start HTTP thread(s)
+			getworkthread.append(Thread(target=getworkloop, args=(chain,)))
+			getworkthread[chain].daemon = True
+			getworkthread[chain].start()
+			
+			# Start mining thread(s)
+			minethread.append(Thread(target=mineloop, args=(chain,)))
+			minethread[chain].daemon = True
+			minethread[chain].start()
+		
 		while True:
 			time.sleep(1)
 			logger.updateStatus()
@@ -462,7 +462,6 @@ with FT232R() as ft232r:
 					minethread[chain] = Thread(target=mineloop, args=(chain,))
 					minethread[chain].daemon = True
 					minethread[chain].start()
-	except KeyboardInterrupt:
-		logger.log("Exiting...")
-		logger.printSummary(settings.devicenum)
-		exit()
+except KeyboardInterrupt:
+	logger.log("Exiting...")
+	logger.printSummary(settings)

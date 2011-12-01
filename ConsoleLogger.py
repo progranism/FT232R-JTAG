@@ -156,27 +156,38 @@ class ConsoleLogger(object):
 		if self.verbose:
 			self.log(message)
 			
-	def printSummary(self, devicenum):
-		self.log('Run Summary:')
-		self.log('-------------')
-		self.log('Device: %d' % devicenum)
-		self.log('Number of FPGAs: %d' % len(self.chain_list))
-		self.log('JTAG chain: %d' % self.chain)
+	def printSummary(self, settings):
+		self.say('Run Summary:', True, True)
+		self.say('-------------', True, True)
+		self.say('Device: %d' % settings.devicenum, True, True)
+		self.say('JTAG chain: %d' % self.chain, True, True)
+		self.say('Number of FPGAs: %d' % len(self.chain_list), True, True)
 		secs = time() - self.start_time
-		self.log('Running time: %d mins' % (secs/60))
+		self.say('Running time: %d mins' % (secs/60), True, True)
+		if secs <= 0:
+			secs = 1
+		self.say('Getwork interval: %d secs' % settings.getwork_interval, True, True)
 		total_nonces = 0
-		for chain in chain_list:
+		for chain in self.chain_list:
 			acc = self.accepted[chain]
 			rej = self.invalid[chain]
 			total = acc + rej
 			total_nonces += total
-			self.log(' Chain %d:' % chain)
-			self.log(' Accepted: %d' % acc)
-			self.log(' Rejected: %d (%.2f%%)' % (rej, (100. * rej / total)))
-			self.log(' Total: %d' % total)
-			self.log(' Accepted hashrate: %sH/s' % (formatNumber(pow(2,32)*acc/(secs*1000))))
-			self.log(' Total hashrate: %sH/s' % (formatNumber(pow(2,32)*total/(secs*1000))))
-		self.log('Total hashrate for device: %sH/s' % (formatNumber(pow(2,32)*total_nonces/(secs*1000))))
+			self.say('Chain %d:' % chain, True, True)
+			self.say('  Accepted: %d' % acc, True, True)
+			if total > 0:
+				self.say('  Rejected: %d (%.2f%%)' % (rej, (100. * rej / total)), True, True)
+			else:
+				self.say('  Rejected: %d' % rej, True, True)
+			self.say('  Total: %d' % total, True, True)
+			self.say('  Accepted hashrate: %sH/s' % (formatNumber(pow(2,32)*acc/(secs*1000))),
+			         True, True)
+			self.say('  Total hashrate: %sH/s' % (formatNumber(pow(2,32)*total/(secs*1000))),
+			         True, True)
+		self.say('Total hashrate for device: %sH/s / %sH/s' % (
+		         formatNumber(pow(2,32)*sum(self.accepted)/(secs*1000)),
+		         formatNumber(pow(2,32)*total_nonces/(secs*1000))),
+		         True, True)
 	  
 	def updateStatus(self, force=False):
 		#only update if last update was more than UPDATE_TIME seconds ago
@@ -184,12 +195,22 @@ class ConsoleLogger(object):
 		if force or dt > self.UPDATE_TIME:
 			status = '[%sH/s]' % formatNumber(self.getRate()/1000)
 			if self.verbose:
-				 for chain in self.chain_list:
-					  status += ' [FPGA%d: %d/%d]' % (chain, self.accepted[chain], self.invalid[chain])
-				 status += ' [%d nonces/' % (sum(self.accepted)+sum(self.invalid))
-				 status += '%d min]' % ((time()-self.start_time)/60)
+				for chain in self.chain_list:
+					acc = self.accepted[chain]
+					rej = self.invalid[chain]
+					if (acc+rej) > 0:
+						status += ' [FPGA%d: %d/%d (%.2f%%)]' % (chain, acc, rej, 100.*rej/(acc+rej))
+					else:
+						status += ' [FPGA%d: %d/%d]' % (chain, acc, rej)
+				status += ' [%d nonces/' % (sum(self.accepted)+sum(self.invalid))
+				status += '%d min]' % ((time()-self.start_time)/60)
 			else:
-				 status += ' [%d/%d]' % (sum(self.accepted), sum(self.invalid))
+				acc = sum(self.accepted)
+				rej = sum(self.invalid)
+				if (acc+rej) > 0:
+					status += ' [%d/%d (%.2f%%)]' % (acc, rej, 100.*rej/(acc+rej))
+				else:
+					status += ' [%d/%d]' % (acc, rej)
 			#status += ' ' + self.sparkline
 			self.say(status)
 			self.lastUpdate = time()
@@ -199,10 +220,10 @@ class ConsoleLogger(object):
 		if newLine:
 			message += '\n'
 			if hideTimestamp:
-				 timestamp = ''
+				timestamp = ''
 			else:
-				 timestamp = datetime.now().strftime(self.TIME_FORMAT) + ' '
-				 
+				timestamp = datetime.now().strftime(self.TIME_FORMAT) + ' '
+				
 			message = timestamp + message
 
 		#wait until nothing else is being printed
