@@ -115,6 +115,11 @@ class ConsoleLogger(object):
 				 rate = 0
 			sparkline += ticks[rate]
 		return sparkline
+		
+	def reportOpened(self, devicenum, serial):
+		self.devicenum = devicenum
+		self.serial = serial
+		self.log('Device %d opened (%s)' % (devicenum, serial))
 	  
 	def reportType(self, type):
 		self.connectionType = type
@@ -159,7 +164,8 @@ class ConsoleLogger(object):
 	def printSummary(self, settings):
 		self.say('Run Summary:', True, True)
 		self.say('-------------', True, True)
-		self.say('Device: %d' % settings.devicenum, True, True)
+		self.say('Device: %d' % self.devicenum, True, True)
+		self.say('Serial: %s' % self.serial, True, True)
 		self.say('JTAG chain: %d' % self.chain, True, True)
 		self.say('Number of FPGAs: %d' % len(self.chain_list), True, True)
 		secs = time() - self.start_time
@@ -199,9 +205,9 @@ class ConsoleLogger(object):
 					acc = self.accepted[chain]
 					rej = self.invalid[chain]
 					if (acc+rej) > 0:
-						status += ' [FPGA%d: %d/%d (%.2f%%)]' % (chain, acc, rej, 100.*rej/(acc+rej))
+						status += ' [%d: %d/%d (%.2f%%)]' % (chain, acc, rej, 100.*rej/(acc+rej))
 					else:
-						status += ' [FPGA%d: %d/%d]' % (chain, acc, rej)
+						status += ' [%d: %d/%d]' % (chain, acc, rej)
 				status += ' [%d nonces/' % (sum(self.accepted)+sum(self.invalid))
 				status += '%d min]' % ((time()-self.start_time)/60)
 			else:

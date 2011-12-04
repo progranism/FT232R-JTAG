@@ -139,6 +139,7 @@ logger.log(" Bitstream Length: %d" % len(bitfile.bitstream))
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 	ft232r.open(settings.devicenum, portlist)
+	logger.reportOpened(settings.devicenum, ft232r.serial)
 	
 	if settings.chain == 2:
 		chain_list = [0,1]

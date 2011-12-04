@@ -201,7 +201,7 @@ def fpgaWriteJob(jtag, job):
 
 	#print "It took %.1f seconds to write data." % (time.time() - start_time)
 	
-	logger.reportDebug("(FPGA%d) Job data loaded in %f seconds" % (jtag.chain, (time.time() - start_time)))
+	logger.reportDebug("(FPGA%d) Job data loaded in %.3f seconds" % (jtag.chain, (time.time() - start_time)))
 
 def connect(proto, host, timeout):
 	connector = httplib.HTTPSConnection if proto == 'https' else httplib.HTTPConnection
@@ -250,8 +250,8 @@ def getwork(connection, data=None):
 	except RPCError as e:
 		logger.reportDebug("RPCError! %s" % e)
 		return (connection, e)
-	except IOError:
-		logger.reportDebug("IOError!")
+	#except IOError:
+	#	logger.reportDebug("IOError!")
 	except ValueError:
 		logger.reportDebug("ValueError!")
 	except httplib.HTTPException:
@@ -291,7 +291,7 @@ def getworkloop(chain):
 		last_job = time.time() - settings.getwork_interval
 
 	while True:
-		#time.sleep(0.1)
+		time.sleep(0.1)
 
 		if last_job is None or (time.time() - last_job) > settings.getwork_interval:
 			#rpc_lock.acquire()
@@ -326,7 +326,7 @@ def mineloop(chain):
 	current_job = None
 	
 	while True:
-		#time.sleep(0.1)
+		time.sleep(0.1)
 		job = None
 		try:
 			job = jobqueue[chain].get(False)
@@ -394,7 +394,7 @@ try:
 	with FT232R() as ft232r:
 		portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 		ft232r.open(settings.devicenum, portlist)
-		logger.log("Device %d opened" % settings.devicenum)
+		logger.reportOpened(settings.devicenum, ft232r.serial)
 		
 		if settings.chain == 0 or settings.chain == 1:
 			chain_list = [settings.chain]

@@ -98,6 +98,7 @@ class FT232R:
 		self.synchronous = None
 		self.write_buffer = ""
 		self.portlist = None
+		self.serial = ""
 		
 	def __enter__(self): 
 		return self
@@ -123,6 +124,7 @@ class FT232R:
 
 		if self.handle is not None:
 			self.portlist = portlist
+			self.serial = self.handle.getDeviceInfo()['serial']
 			self._setBaudRate(DEFAULT_FREQUENCY)
 			self._setSyncMode()
 			self._purgeBuffers()
