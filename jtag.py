@@ -70,7 +70,16 @@ class JTAG():
 		self.idcodes = None
 		self.irlengths = None
 
-		self._readDeviceCount()
+		retries_left = 3
+		while retries_left > 0:
+			self.deviceCount = self._readDeviceCount()
+			if self.deviceCount is None or self.deviceCount == 0:
+				retries_left -= 1
+			else:
+				break
+		if self.deviceCount is None or self.deviceCount == 0:
+			raise NoDevicesDetected
+		
 		self._readIdcodes()
 		self._processIdcodes()
 
@@ -240,12 +249,12 @@ class JTAG():
 		print ""
 		print "Loaded data in %d secs." % (time.time() - start_time)
 		
-		self._log("Status: " + str(self.ft232r.handle.getStatus()))
-		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
+		#self._log("Status: " + str(self.ft232r.handle.getStatus()))
+		#self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
 		self.ft232r._setSyncMode()
 		self.ft232r._purgeBuffers()
-		self._log("Status: " + str(self.ft232r.handle.getStatus()))
-		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
+		#self._log("Status: " + str(self.ft232r.handle.getStatus()))
+		#self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
 		
 		for bit in last_bits[:-1]:
 			self.jtagClock(tdi=bit)
@@ -253,8 +262,8 @@ class JTAG():
 		
 		self.tap.goto(TAP.IDLE)
 		self.ft232r.flush()
-		self._log("Status: " + str(self.ft232r.handle.getStatus()))
-		self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
+		#self._log("Status: " + str(self.ft232r.handle.getStatus()))
+		#self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
 		
 	def load_bitstream(self, processed_bitstream, progressCallback=None):
 		self.tap.goto(TAP.SELECT_DR)
@@ -355,8 +364,7 @@ class JTAG():
 	#		self.jtagClock(tms=1)
 	
 	def _readDeviceCount(self):
-		self.deviceCount = None
-
+		deviceCount = None
 		#self.tap.reset()
 
 		# Force BYPASS
@@ -377,12 +385,11 @@ class JTAG():
 		# Now see how many devices there were.
 		for i in range(0, len(data)-1):
 			if data[i] == 1:
-				self.deviceCount = i
+				deviceCount = i
 				break
 
-		if self.deviceCount is None or self.deviceCount == 0:
-			self.deviceCount = None
-			raise NoDevicesDetected()
+		return deviceCount
+		
 
 	
 	def _readIdcodes(self):

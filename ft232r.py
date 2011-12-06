@@ -218,13 +218,13 @@ class FT232R:
 			if wrote != bytes_to_write:
 				raise WriteError()
 			write_buffer = write_buffer[wrote:]
-			self._log("Status: " + str(self.handle.getStatus()))
-			self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
+			#self._log("Status: " + str(self.handle.getStatus()))
+			#self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
 			
 			while self.handle.getQueueStatus() < wrote:
 				# TODO: Add a timeout
 				time.sleep(1)
-				self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
+				#self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
 			
 			data.extend(self.handle.read(wrote))
 			

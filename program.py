@@ -114,13 +114,13 @@ def programBitstream(ft232r, jtag, chain, processed_bitstream):
 logger = ConsoleLogger(settings.chain, settings.verbose)
 
 if len(args) == 0:
-	logger.log("ERROR: No bitstream file specified!")
+	logger.log("ERROR: No bitstream file specified!", False)
 	parser.print_usage()
 	exit()
 	
 ### Bitfile ###
 bitfileName = args[0]
-logger.log("Opening bitstream file: " + bitfileName)
+logger.log("Opening bitstream file: " + bitfileName, False)
 bitfile = None
 
 try:
@@ -129,12 +129,12 @@ except BitFileReadError, e:
 	print e
 	exit()
 
-logger.log("Bitstream file opened:")
-logger.log("      Design Name: %s" % bitfile.designname)
-logger.log("        Part Name: %s" % bitfile.part)
-logger.log("             Date: %s" % bitfile.date)
-logger.log("             Time: %s" % bitfile.time)
-logger.log(" Bitstream Length: %d" % len(bitfile.bitstream))
+logger.log("Bitstream file opened:", False)
+logger.log(" Design Name: %s" % bitfile.designname, False)
+logger.log(" Part Name: %s" % bitfile.part, False)
+logger.log(" Date: %s" % bitfile.date, False)
+logger.log(" Time: %s" % bitfile.time, False)
+logger.log(" Bitstream Length: %d" % len(bitfile.bitstream), False)
 
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
@@ -146,7 +146,7 @@ with FT232R() as ft232r:
 	elif settings.chain == 0 or settings.chain == 1:
 		chain_list = [settings.chain]
 	else:
-		logger.log("ERROR: Invalid chain option!")
+		logger.log("ERROR: Invalid chain option!", False)
 		parser.print_usage()
 		exit()
 	
@@ -154,35 +154,36 @@ with FT232R() as ft232r:
 	
 	for chain in chain_list:
 		jtag[chain] = JTAG(ft232r, portlist.chain_portlist(chain), chain)
-		logger.log("Discovering JTAG chain %d ..." % chain)
+		logger.log("Discovering JTAG chain %d ..." % chain, False)
 		jtag[chain].detect()
 		
-		logger.log("Found %i device%s:" % (jtag[chain].deviceCount,
-		                                   's' if jtag[chain].deviceCount != 1 else ''))
+		logger.log("Found %i device%s:" % 
+		           (jtag[chain].deviceCount, 's' if jtag[chain].deviceCount != 1 else ''),
+		           False)
 		
 		for idcode in jtag[chain].idcodes:
-			logger.log(JTAG.decodeIdcode(idcode))
+			logger.log(' ' + JTAG.decodeIdcode(idcode), False)
 			if idcode & 0x0FFFFFFF != bitfile.idcode:
 				raise BitFileMismatch
 	
 	if bitfile.processed:
-		logger.log("Loading pre-processed bitstream...")
+		logger.log("Loading pre-processed bitstream...", False)
 		start_time = time.time()
 		processed_bitstreams = BitFile.load_processed(bitfileName)
-		logger.log("Loaded pre-processed bitstream in %f seconds" % (time.time() - start_time))
+		logger.log("Loaded pre-processed bitstream in %f seconds" % (time.time() - start_time), False)
 	else:
-		logger.log("Pre-processing bitstream...")
+		logger.log("Pre-processing bitstream...", False)
 		start_time = time.time()
 		processed_bitstreams = BitFile.pre_process(bitfile.bitstream, jtag, chain_list)
-		logger.log("Pre-processed bitstream in %f seconds" % (time.time() - start_time))
-		logger.log("Saving pre-processed bitstream...")
+		logger.log("Pre-processed bitstream in %f seconds" % (time.time() - start_time), False)
+		logger.log("Saving pre-processed bitstream...", False)
 		start_time = time.time()
 		BitFile.save_processed(processed_bitstreams, bitfileName)
-		logger.log("Saved pre-processed bitstream in %f seconds" % (time.time() - start_time))
+		logger.log("Saved pre-processed bitstream in %f seconds" % (time.time() - start_time), False)
 	
-	logger.log("Beginning programming...")
+	logger.log("Beginning programming...", False)
 	for chain in chain_list:
-		logger.log("Programming FPGA %d..." % chain)
+		logger.log("Programming FPGA %d..." % chain, False)
 		start_time = time.time()
 		programBitstream(ft232r, jtag[chain], chain, processed_bitstreams[chain])
-		logger.log("Programmed FPGA %d in %f seconds" % (chain, time.time() - start_time))
+		logger.log("Programmed FPGA %d in %f seconds" % (chain, time.time() - start_time), False)
