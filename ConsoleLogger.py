@@ -208,8 +208,9 @@ class ConsoleLogger(object):
 						status += ' [%d: %d/%d (%.2f%%)]' % (chain, acc, rej, 100.*rej/(acc+rej))
 					else:
 						status += ' [%d: %d/%d]' % (chain, acc, rej)
-				status += ' [%d nonces/' % (sum(self.accepted)+sum(self.invalid))
+				status += ' ['#%d nonces/' % (sum(self.accepted)+sum(self.invalid))
 				status += '%d min]' % ((time()-self.start_time)/60)
+				status += ' ' + self.serial
 			else:
 				acc = sum(self.accepted)
 				rej = sum(self.invalid)
@@ -217,7 +218,7 @@ class ConsoleLogger(object):
 					status += ' [%d/%d (%.2f%%)]' % (acc, rej, 100.*rej/(acc+rej))
 				else:
 					status += ' [%d/%d]' % (acc, rej)
-			#status += ' ' + self.sparkline
+				status += ' ' + self.sparkline
 			self.say(status)
 			self.lastUpdate = time()
 	  
