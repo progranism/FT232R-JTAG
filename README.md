@@ -26,7 +26,7 @@ Options:
 
 ### mine.py
 ```
-Usage: mine.py [-d <devicenum>] [-c <chain>] -p <pool-url> -u <user:pass>
+Usage: mine.py [-d <devicenum>] [-c <chain>] -u <pool-url> -w <user:pass>
 
 Options:
   -h, --help            show this help message and exit
@@ -39,7 +39,8 @@ Options:
   -i GETWORK_INTERVAL, --interval=GETWORK_INTERVAL
                         Getwork interval in seconds (default 30)
   -v, --verbose         Verbose logging
-  -p POOL, --pool=POOL  URL for the pool or bitcoind server, e.g. pool.com:8337
-  -u USER, --user=USER  Username and password for the pool, e.g. user:pass
+  -u URL, --url=URL     URL for the pool or bitcoind server, e.g. pool.com:8337
+  -w WORKER, --worker=WORKER
+                        Worker username and password for the pool, e.g. user:pass
 ```
 
