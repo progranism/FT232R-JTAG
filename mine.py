@@ -45,10 +45,10 @@ parser.add_option("-i", "--interval", type="int", dest="getwork_interval", defau
                   help="Getwork interval in seconds (default 30)")
 parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
                   help="Verbose logging")
-parser.add_option("-p", "--pool", type="str", dest="pool",
-                  help="URL for the pool, e.g. pool.com:8337")
-parser.add_option("-u", "--user", type="str", dest="user",
-                  help="Username and password for the pool, e.g. user:pass")
+parser.add_option("-u", "--url", type="str", dest="url",
+                  help="URL for the pool or bitcoind server, e.g. pool.com:8337")
+parser.add_option("-w", "--worker", type="str", dest="worker",
+                  help="Worker username and password for the pool, e.g. user:pass")
 settings, args = parser.parse_args()
 
 # Socket wrapper to enable socket.TCP_NODELAY and KEEPALIVE
@@ -394,18 +394,18 @@ def mineloop(chain):
 
 
 proto = "http"
-if settings.pool is None:
-	print "ERROR: Pool not specified!"
+if settings.url is None:
+	print "ERROR: URL not specified!"
 	parser.print_usage()
 	exit()
-host = settings.pool
-if settings.user is None:
-	print "ERROR: User not specified!"
+host = settings.url
+if settings.worker is None:
+	print "ERROR: Worker not specified!"
 	parser.print_usage()
 	exit()
 postdata = {'method': 'getwork', 'id': 1}
 headers = {"User-Agent": 'FPGAMiner', 
-           "Authorization": 'Basic ' + b64encode(settings.user),
+           "Authorization": 'Basic ' + b64encode(settings.worker),
            "Content-Type": 'application/json'
           }
 timeout = 5
@@ -427,10 +427,10 @@ try:
 			parser.print_usage()
 			exit()
 		
-		jtag = []
+		jtag = [None, None]
 		fpga_num = 0
 		for chain in chain_list:
-			jtag.append(JTAG(ft232r, portlist.chain_portlist(chain), chain))
+			jtag[chain] = JTAG(ft232r, portlist.chain_portlist(chain), chain)
 			
 			logger.reportDebug("Discovering JTAG chain %d ..." % chain)
 			jtag[chain].detect()
@@ -446,27 +446,27 @@ try:
 		
 		logger.log("Connected to %d FPGAs" % fpga_num)
 		
-		getworkthread = []
-		minethread = []
+		getworkthread = [None, None]
+		minethread = [None, None]
 		
-		jobqueue = []
-		goldqueue = []
+		jobqueue = [None, None]
+		goldqueue = [None, None]
 		
 		ft232r_lock = Lock()
 		rpc_lock = Lock()
 		
 		logger.start()
 		for chain in chain_list:
-			jobqueue.append(Queue())
-			goldqueue.append(Queue())
+			jobqueue[chain] = Queue()
+			goldqueue[chain] = Queue()
 			
 			# Start HTTP thread(s)
-			getworkthread.append(Thread(target=getworkloop, args=(chain,)))
+			getworkthread[chain] = Thread(target=getworkloop, args=(chain,))
 			getworkthread[chain].daemon = True
 			getworkthread[chain].start()
 			
 			# Start mining thread(s)
-			minethread.append(Thread(target=mineloop, args=(chain,)))
+			minethread[chain] = Thread(target=mineloop, args=(chain,))
 			minethread[chain].daemon = True
 			minethread[chain].start()
 		

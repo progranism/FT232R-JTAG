@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # Copyright (C) 2011 by fpgaminer <fpgaminer@bitcoin-mining.com>
 #                       fizzisist <fizzisist@fpgamining.com>
 #
