@@ -10,7 +10,7 @@ For Linux, you will need to build and install my modified version of the PyUSB m
 There are two python scripts that you will need to use to mine with an X6500. The first is _program.py_, which will program the FPGA and prepare it for bitcoin mining. This needs to be run every time power is removed from the board or if you want to load a different bitstream. The second script is _mine.py_, which handles the communication between the pool and the X6500.
 
 ### program.py
-
+```
 Usage: program.py [-d <devicenum>] [-c <chain>] <path-to-bitstream-file>
 
 Options:
@@ -22,9 +22,10 @@ Options:
                         JTAG chain number, can be 0, 1, or 2 for both FPGAs on
                         the board (default 2)
   -v, --verbose         Verbose logging
-
+```
 
 ### mine.py
+```
 Usage: mine.py [-d <devicenum>] [-c <chain>] -p <pool-url> -u <user:pass>
 
 Options:
@@ -40,4 +41,5 @@ Options:
   -v, --verbose         Verbose logging
   -p POOL, --pool=POOL  URL for the pool or bitcoind server, e.g. pool.com:8337
   -u USER, --user=USER  Username and password for the pool, e.g. user:pass
+```
 
