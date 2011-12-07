@@ -30,8 +30,8 @@ from ConsoleLogger import ConsoleLogger
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] <path-to-bitstream-file>")
 parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
                   help="Device number, default 0 (only needed if you have more than one board)")
-parser.add_option("-c", "--chain", type="int", dest="chain", default=0,
-                  help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 0)")
+parser.add_option("-c", "--chain", type="int", dest="chain", default=2,
+                  help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 2)")
 parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
                   help="Verbose logging")
 settings, args = parser.parse_args()
