@@ -39,10 +39,10 @@ USER_INSTRUCTION = 0b000010
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] -p <pool-url> -u <user:pass>")
 parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
                   help="Device number, default 0 (only needed if you have more than one board)")
-parser.add_option("-c", "--chain", type="int", dest="chain", default=0,
-                  help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 0)")
-parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=20,
-                  help="Getwork interval in seconds (default 20)")
+parser.add_option("-c", "--chain", type="int", dest="chain", default=2,
+                  help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 2)")
+parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=30,
+                  help="Getwork interval in seconds (default 30)")
 parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
                   help="Verbose logging")
 parser.add_option("-p", "--pool", type="str", dest="pool",
@@ -98,12 +98,6 @@ def bits2int(bits):
 def fpgaReadByte(jtag):
 	bits = int2bits(0, 13)
 	byte = bits2int(jtag.read_dr(bits))
-
-	#print "Read: %.04X" % byte
-
-	#if byte < 0x1000:
-	#	return None
-
 	return byte
 
 def fpgaReadNonce(jtag):
@@ -156,15 +150,19 @@ def fpgaReadNonce(jtag):
 
 # TODO: This may not actually clear the queue, but should be correct most of the time.
 def fpgaClearQueue(jtag):
-	logger.reportDebug("Clearing queue...")
+	logger.reportDebug("(FPGA%d) Clearing queue..." % jtag.chain)
 
+	jtag.tap.reset()
+	jtag.instruction(USER_INSTRUCTION)
+	jtag.shift_ir()
+	
 	while True:
-		jtag.tap.reset()	# Gives extra time for the FPGA's FIFO to get the next byte ready.
-
-		if fpgaReadNonce(jtag) is None:
+		if fpgaReadByte(jtag) < 0x1000:
 			break
 	
-	logger.reportDebug("Queue cleared.")
+	jtag.tap.reset()
+	
+	logger.reportDebug("(FPGA%d) Queue cleared." % jtag.chain)
 
 def fpgaWriteJob(jtag, job):
 	# We need the 256-bit midstate, and 12 bytes from data.
@@ -336,6 +334,9 @@ def getworkloop(chain):
 
 def mineloop(chain):
 	current_job = None
+	ft232r_lock.acquire()
+	fpgaClearQueue(jtag[chain])
+	ft232r_lock.release()
 	
 	while True:
 		time.sleep(0.1)
@@ -359,7 +360,7 @@ def mineloop(chain):
 			#fpgaClearQueue(jtag[chain])
 			ft232r_lock.release()
 			if nonce is not None:
-				logger.reportDebug("(FPGA%d) Golden nonce found*" % chain)
+				logger.reportDebug("(FPGA%d) Golden nonce found" % chain)
 				gold = Object()
 				gold.job = current_job
 				gold.nonce = nonce
@@ -438,7 +439,7 @@ try:
 				's' if jtag[chain].deviceCount != 1 else ''))
 
 			for idcode in jtag[chain].idcodes:
-				msg = "FPGA" + str(chain) + ": "
+				msg = " FPGA" + str(chain) + ": "
 				msg += JTAG.decodeIdcode(idcode)
 				logger.reportDebug(msg)
 				fpga_num += 1
