@@ -31,7 +31,7 @@ def formatNumber(n):
 	"""Format a positive integer in a more readable fashion."""
 	if n < 0:
 	  raise ValueError('can only format positive integers')
-	prefixes = 'KMGTP'
+	prefixes = 'kMGTP'
 	whole = str(int(n))
 	decimal = ''
 	i = 0
@@ -221,6 +221,12 @@ class ConsoleLogger(object):
 				status += ' ' + self.sparkline
 			self.say(status)
 			self.lastUpdate = time()
+	
+	def updateProgress(self, start_time, now_time, written, total):
+		percent_complete = 100. * written / total
+		speed = written / (1000 * (now_time - start_time))
+		status = "Completed: %.1f%% [%sB/s]" % (percent_complete, formatNumber(speed))
+		self.say(status)
 	  
 	def say(self, message, newLine=False, hideTimestamp=False):
 		#add new line if requested

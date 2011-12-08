@@ -44,10 +44,6 @@ def bits2int(bits):
 		x |= bits[i] << i
 	return x
 
-def bitstreamProgress(start_time, now_time, written, total):
-	message = "Completed: %.1f%% [%.1f kB/s]\r" % (100.0 * written / total, 0.001 * written  / (now_time - start_time))
-	print message,
-
 def programBitstream(ft232r, jtag, chain, processed_bitstream):
 	# Select the device
 	jtag.reset()
@@ -81,7 +77,7 @@ def programBitstream(ft232r, jtag, chain, processed_bitstream):
 	#bitfile.bitstream = bitfile.bitstream[0:5000] + chr(0x12) + bitfile.bitstream[5001:]
 
 	# Load bitstream into CFG_IN
-	jtag.load_bitstream(processed_bitstream)
+	jtag.load_bitstream(processed_bitstream, logger.updateProgress)
 
 	# Load with JSTART
 	jtag.instruction(0x0C)
@@ -103,12 +99,12 @@ def programBitstream(ft232r, jtag, chain, processed_bitstream):
 	jtag.runtest(24)
 	
 	# Check done pin
-#		jtag.instruction(0xFF)
+	#jtag.instruction(0xFF)
 	# TODO: Figure this part out. & 0x20 should equal 0x20 to check the DONE pin ... ???
-#		print jtag.read_ir() # & 0x20 == 0x21
-#		jtag.instruction(0xFF)
-#		jtag.shift_ir()
-#		jtag.shift_dr([0])
+	#print jtag.read_ir() # & 0x20 == 0x21
+	#jtag.instruction(0xFF)
+	#jtag.shift_ir()
+	#jtag.shift_dr([0])
 
 	ft232r.flush()
 
