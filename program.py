@@ -147,7 +147,7 @@ with FT232R() as ft232r:
 		parser.print_usage()
 		exit()
 	
-	jtag = [None, None]
+	jtag = [None]*2
 	
 	for chain in chain_list:
 		jtag[chain] = JTAG(ft232r, portlist.chain_portlist(chain), chain)
@@ -158,29 +158,45 @@ with FT232R() as ft232r:
 		           (jtag[chain].deviceCount, 's' if jtag[chain].deviceCount != 1 else ''),
 		           False)
 		
-		for idcode in jtag[chain].idcodes:
-			logger.log(' ' + JTAG.decodeIdcode(idcode), False)
+		if jtag[chain].deviceCount > 1:
+			logger.log("Warning:", False)
+			logger.log("This software currently supports only one device per chain.", False)
+			logger.log("Only part 0 will be programmed.", False)
+		for i, idcode in enumerate(jtag[chain].idcodes):
+			logger.log(' %d) %s %s' % (
+									i, JTAG.decodeIdcode(idcode),
+									'*' if i > 0 else ''), False)
 			if idcode & 0x0FFFFFFF != bitfile.idcode:
 				raise BitFileMismatch
 	
-	if bitfile.processed:
+	if settings.chain == 2:
+		jtag = JTAG(ft232r, portlist, settings.chain)
+		jtag.deviceCount = 1
+		jtag.idcodes = [bitfile.idcode]
+		jtag._processIdcodes()
+	else:
+		jtag = jtag[settings.chain]
+	
+	if bitfile.processed[settings.chain]:
 		logger.log("Loading pre-processed bitstream...", False)
 		start_time = time.time()
-		processed_bitstreams = BitFile.load_processed(bitfileName)
+		processed_bitstream = BitFile.load_processed(bitfileName, settings.chain)
 		logger.log("Loaded pre-processed bitstream in %f seconds" % (time.time() - start_time), False)
 	else:
-		logger.log("Pre-processing bitstream...", False)
+		logger.log("Pre-processing bitstream for chain = %d..." % settings.chain, False)
 		start_time = time.time()
-		processed_bitstreams = BitFile.pre_process(bitfile.bitstream, jtag, chain_list)
+		processed_bitstream = BitFile.pre_process(bitfile.bitstream, jtag, settings.chain)
 		logger.log("Pre-processed bitstream in %f seconds" % (time.time() - start_time), False)
 		logger.log("Saving pre-processed bitstream...", False)
 		start_time = time.time()
-		BitFile.save_processed(processed_bitstreams, bitfileName)
+		BitFile.save_processed(bitfileName, processed_bitstream, settings.chain)
 		logger.log("Saved pre-processed bitstream in %f seconds" % (time.time() - start_time), False)
 	
 	logger.log("Beginning programming...", False)
-	for chain in chain_list:
-		logger.log("Programming FPGA %d..." % chain, False)
-		start_time = time.time()
-		programBitstream(ft232r, jtag[chain], chain, processed_bitstreams[chain])
-		logger.log("Programmed FPGA %d in %f seconds" % (chain, time.time() - start_time), False)
+	if settings.chain == 2:
+		logger.log("Programming both FPGAs...", False)
+	else:
+		logger.log("Programming FPGA %d..." % settings.chain, False)
+	start_time = time.time()
+	programBitstream(ft232r, jtag, settings.chain, processed_bitstream)
+	logger.log("Programmed FPGA %d in %f seconds" % (settings.chain, time.time() - start_time), False)

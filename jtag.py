@@ -70,7 +70,7 @@ class JTAG():
 		self.idcodes = None
 		self.irlengths = None
 		
-		retries_left = 3
+		retries_left = 5
 		while retries_left > 0:
 			self.deviceCount = self._readDeviceCount()
 			if self.deviceCount is None or self.deviceCount == 0:
@@ -286,7 +286,7 @@ class JTAG():
 				raise WriteError()
 			written += len(chunk) / 16
 			
-			if time.time() > (last_update + 5) and progressCallback:
+			if time.time() > (last_update + 1) and progressCallback:
 				progressCallback(start_time, time.time(), written, bytetotal)
 				last_update = time.time()
 		

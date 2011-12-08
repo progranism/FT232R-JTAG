@@ -225,7 +225,15 @@ class ConsoleLogger(object):
 	def updateProgress(self, start_time, now_time, written, total):
 		percent_complete = 100. * written / total
 		speed = written / (1000 * (now_time - start_time))
-		status = "Completed: %.1f%% [%sB/s]" % (percent_complete, formatNumber(speed))
+		remaining_sec = 100 * (now_time - start_time) / percent_complete
+		remaining_sec -= now_time - start_time
+		if remaining_sec < 60:
+			remaining = "%ds" % remaining_sec
+		else:
+			remaining_min = int(remaining_sec / 60)
+			remaining_sec -= remaining_min * 60
+			remaining = "%dm%ds" % (remaining_min, remaining_sec)
+		status = "Completed: %.1f%% [%sB/s] [%s remaining]" % (percent_complete, formatNumber(speed), remaining)
 		self.say(status)
 	  
 	def say(self, message, newLine=False, hideTimestamp=False):

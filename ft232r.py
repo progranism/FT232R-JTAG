@@ -47,7 +47,7 @@ class FT232R_PortList:
 		return (1 << self.tck0) | (1 << self.tms0) | (1 << self.tdi0) | \
 		       (1 << self.tck1) | (1 << self.tms1) | (1 << self.tdi1)
 
-	def format(self, tck, tms, tdi, chain=0):
+	def format(self, tck, tms, tdi, chain=2):
 		"""Format the pin states as a single byte for sending to the FT232R
 		Chain is the JTAG chain: 0 or 1, or 2 for both
 		"""
@@ -66,6 +66,8 @@ class FT232R_PortList:
 			                             ((tck&1) << self.tck1) | 
 			                             ((tms&1) << self.tms1) | 
 			                             ((tdi&1) << self.tdi1)))
+		else:
+			raise InvalidChain()
 	
 	def chain_portlist(self, chain=0):
 		"""Returns a JTAG_PortList object for the specified chain"""

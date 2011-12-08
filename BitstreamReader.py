@@ -86,34 +86,34 @@ class BitFile:
 			length = BitFile._readLength4(f)
 			bitfile.bitstream = BitFile._readOrDie(f, length)
 			
-			processed_name = name.split('.')[0] + '.processed'
-			if os.path.isfile(processed_name):
-				bitfile.processed = True
-			else:
-				bitfile.processed = False
+			bitfile.processed = [False]*3
+			
+			for i in range(3):
+				processed_name = name.split('.')[0] + '.bit.' + str(i)
+				if os.path.isfile(processed_name):
+					bitfile.processed[i] = True
+			
 			return bitfile
 	
 	@staticmethod
-	def pre_process(bitstream, jtag, chain_list):
+	def pre_process(bitstream, jtag, chain):
 		CHUNK_SIZE = 4096*4
-		chunk = ["", ""]
-		chunks = [[], []]
+		chunk = ""
+		chunks = []
 
 		for b in bitstream[:-1]:
 			d = ord(b)
 			
 			for i in range(7, -1, -1):
 				x = (d >> i) & 1
-				for chain in chain_list:
-					chunk[chain] += jtag[chain]._formatJtagClock(tdi=x)
+				chunk += jtag._formatJtagClock(tdi=x)
 					
-					if len(chunk[chain]) >= CHUNK_SIZE:
-						chunks[chain].append(chunk[chain])
-						chunk[chain] = ""
+				if len(chunk) >= CHUNK_SIZE:
+					chunks.append(chunk)
+					chunk = ""
 		
-		for chain in chain_list:
-			if len(chunk[chain]) > 0:
-				chunks[chain].append(chunk[chain])
+		if len(chunk) > 0:
+			chunks.append(chunk)
 
 		last_bits = []
 		d = ord(bitstream[-1])
@@ -123,23 +123,21 @@ class BitFile:
 		#for i in range(self.current_part):
 		#	last_bits.append(0)
 		
-		processed_bitstreams = []
-		for chain in chain_list:
-			processed_bitstream = Object()
-			processed_bitstream.chunks = chunks[chain]
-			processed_bitstream.last_bits = last_bits
-			processed_bitstreams.append(processed_bitstream)
+		processed_bitstream = Object()
+		processed_bitstream.chunks = chunks
+		processed_bitstream.last_bits = last_bits
 		
-		return processed_bitstreams
+		return processed_bitstream
 	
 	@staticmethod
-	def save_processed(processed_bitstreams, name):
-		processed_name = name.split('.')[0] + ".processed"
-		pickle.dump(processed_bitstreams, open(processed_name, "wb"), pickle.HIGHEST_PROTOCOL)
+	def save_processed(name, processed_bitstream, chain):
+		processed_name = name.split('.')[0] + ".bit." + str(chain)
+		if processed_bitstream is not None:
+			pickle.dump(processed_bitstream, open(processed_name, "wb"), pickle.HIGHEST_PROTOCOL)
 	
 	@staticmethod
-	def load_processed(name):
-		processed_name = name.split('.')[0] + ".processed"
+	def load_processed(name, chain):
+		processed_name = name.split('.')[0] + ".bit." + str(chain)
 		return pickle.load(open(processed_name, "rb"))
 	
 	# Read a 2-byte, unsigned, Big Endian length.
