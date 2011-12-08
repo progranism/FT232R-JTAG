@@ -1,0 +1,7 @@
+*~
+*.swp
+*.pyc
+Documents
+bitstream
+*.bit
+*.log
