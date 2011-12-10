@@ -1,5 +1,5 @@
 # README
-FT232R-JTAG is a set of code designed for working with the X6500 FPGA Miner boards, which are used for bitcoin mining. To communicate with the FPGAs, it takes advantage of the FTDI FT232R's ability to "bitbang" many of it's pins. The code supports running 2 parallel JTAG chains.
+x6500-miner is a set of code designed for working with the X6500 FPGA Miner boards, which are used for bitcoin mining.
 
 ## Dependencies
 The main dependencies are python 2.7 and the PyUSB module created by Pablo Bleyer. PyUSB is available as source or an installer for Windows from: http://bleyer.org/pyusb.
