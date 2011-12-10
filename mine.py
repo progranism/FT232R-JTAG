@@ -31,6 +31,8 @@ from Queue import Queue, Empty
 import httplib
 import socket
 from ConsoleLogger import ConsoleLogger
+from struct import pack, unpack
+from hashlib import sha256
 
 NUM_RETRIES = 5
 USER_INSTRUCTION = 0b000010
@@ -94,7 +96,21 @@ def bits2int(bits):
 		x |= bits[i] << i
 	
 	return x
-
+	
+# This function is borrowed from phoenix-miner:
+def checkHash(gold):
+	staticDataUnpacked = unpack('<' + 'I'*19, gold.job.data.decode('hex')[:76])
+	staticData = pack('>' + 'I'*19, *staticDataUnpacked)
+	hashInput = pack('>76sI', staticData, gold.nonce)
+	hashOutput = sha256(sha256(hashInput).digest()).digest()
+	
+	for t,h in zip(gold.job.target.decode('hex')[::-1], hashOutput[::-1]):
+		if ord(t) > ord(h):
+			return True
+		elif ord(t) < ord(h):
+			return False
+	return True
+	
 def fpgaReadByte(jtag):
 	bits = int2bits(0, 13)
 	byte = bits2int(jtag.read_dr(bits))
@@ -292,6 +308,7 @@ def getworkloop(chain):
 			job = Object()
 			job.midstate = work['midstate']
 			job.data = work['data']
+			job.target = work['target']
 			jobqueue[chain].put(job)
 			#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
 			last_job = time.time()
@@ -306,12 +323,12 @@ def getworkloop(chain):
 			#rpc_lock.acquire()
 			(connection, work) = getwork(connection, chain)
 			#rpc_lock.release()
-
 			
 			try:
 				job = Object()
 				job.midstate = work['midstate']
 				job.data = work['data']
+				job.target = work['target']
 				jobqueue[chain].put(job)
 				#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
 				last_job = time.time()
@@ -364,13 +381,15 @@ def mineloop(chain):
 				gold = Object()
 				gold.job = current_job
 				gold.nonce = nonce
-				try:
-					goldqueue[chain].put(gold, block=True, timeout=10)
-					#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
-				except Full:
-					logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
-			#else:
-			#	logger.reportDebug("(FPGA%d) No nonce found" % chain)
+				if checkHash(gold) is False:
+					logger.reportDebug("(FPGA%d) Invalid nonce!" % chain)
+				else:
+					try:
+						goldqueue[chain].put(gold, block=True, timeout=10)
+						#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
+					except Full:
+						logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
+					
 			current_job = job
 		
 		if current_job is not None:
@@ -383,14 +402,15 @@ def mineloop(chain):
 				logger.reportDebug("(FPGA%d) Golden nonce found" % chain)
 				gold = Object()
 				gold.job = current_job
-				gold.nonce = nonce
-				try:
-					goldqueue[chain].put(gold, block=True, timeout=10)
-					#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
-				except Full:
-					logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
-			#else:
-			#	logger.reportDebug("(FPGA%d) No nonce found" % chain)
+				gold.nonce = nonce & 0xFFFFFFFF
+				if checkHash(gold) is False:
+					logger.reportDebug("(FPGA%d) Invalid nonce!" % chain)
+				else:
+					try:
+						goldqueue[chain].put(gold, block=True, timeout=10)
+						#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
+					except Full:
+						logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
 
 
 proto = "http"
