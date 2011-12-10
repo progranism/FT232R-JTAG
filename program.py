@@ -199,4 +199,7 @@ with FT232R() as ft232r:
 		logger.log("Programming FPGA %d..." % settings.chain, False)
 	start_time = time.time()
 	programBitstream(ft232r, jtag, settings.chain, processed_bitstream)
-	logger.log("Programmed FPGA %d in %f seconds" % (settings.chain, time.time() - start_time), False)
+	if settings.chain == 2:
+		logger.log("Programmed both FPGAs in %f seconds" % (time.time() - start_time), False)
+	else:
+		logger.log("Programmed FPGA %d in %f seconds" % (settings.chain, time.time() - start_time), False)
