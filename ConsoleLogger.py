@@ -205,7 +205,7 @@ class ConsoleLogger(object):
 					acc = self.accepted[chain]
 					rej = self.invalid[chain]
 					if (acc+rej) > 0:
-						status += ' [%d: %d/%d (%.2f%%)]' % (chain, acc, rej, 100.*rej/(acc+rej))
+						status += ' [%d: %d/%d %.1f%%]' % (chain, acc, rej, 100.*rej/(acc+rej))
 					else:
 						status += ' [%d: %d/%d]' % (chain, acc, rej)
 				status += ' ['#%d nonces/' % (sum(self.accepted)+sum(self.invalid))
