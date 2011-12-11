@@ -446,7 +446,7 @@ try:
 		elif settings.chain == 2:
 			chain_list = [0, 1]
 		else:
-			logger.log("ERROR: Invalid chain option!")
+			logger.log("ERROR: Invalid chain option!", False)
 			parser.print_usage()
 			exit()
 		
@@ -455,31 +455,28 @@ try:
 		for chain in chain_list:
 			jtag[chain] = JTAG(ft232r, portlist.chain_portlist(chain), chain)
 			
-			logger.reportDebug("Discovering JTAG chain %d ..." % chain)
+			logger.reportDebug("Discovering JTAG chain %d ..." % chain, False)
 			jtag[chain].detect()
 			
 			logger.reportDebug("Found %i device%s ..." % (jtag[chain].deviceCount,
-				's' if jtag[chain].deviceCount != 1 else ''))
+				's' if jtag[chain].deviceCount != 1 else ''), False)
 
 			for idcode in jtag[chain].idcodes:
 				msg = " FPGA" + str(chain) + ": "
 				msg += JTAG.decodeIdcode(idcode)
-				logger.reportDebug(msg)
+				logger.reportDebug(msg, False)
 				fpga_num += 1
 		
-		logger.log("Connected to %d FPGAs" % fpga_num)
+		logger.log("Connected to %d FPGAs" % fpga_num, False)
 		
-		
-		
-		
-		jobqueue = [None, None]
-		goldqueue = [None, None]
+		jobqueue = [None]*2
+		goldqueue = [None]*2
 		
 		ft232r_lock = Lock()
 		
 		logger.start()
 		
-		# Start HTTP thread(s)
+		# Start HTTP thread
 		getworkthread = Thread(target=getworkloop, args=(chain_list,))
 		getworkthread.daemon = True
 		getworkthread.start()
@@ -497,12 +494,12 @@ try:
 		while True:
 			time.sleep(1)
 			logger.updateStatus()
+			if getworkthread is None or not getworkthread.isAlive():
+				logger.log("Restarting getworkthread")
+				getworkthread = Thread(target=getworkloop, args=(chain_list,))
+				getworkthread.daemon = True
+				getworkthread.start()
 			for chain in chain_list:
-				if getworkthread is None or not getworkthread.isAlive():
-					logger.log("Restarting getworkthread")
-					getworkthread = Thread(target=getworkloop, args=(chain_list,))
-					getworkthread.daemon = True
-					getworkthread.start()
 				if minethread[chain] is None or not minethread[chain].isAlive():
 					logger.log("Restarting minethread for chain %d" % chain)
 					minethread[chain] = Thread(target=mineloop, args=(chain,))

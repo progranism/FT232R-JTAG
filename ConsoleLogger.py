@@ -43,11 +43,35 @@ def formatNumber(n):
 		else:
 			break
 	return '%s%s %s' % (whole, decimal, prefixes[i])
-	  
+	
+def formatTime(seconds):
+	minutes = int(seconds / 60)
+	hours = int(minutes / 60)
+	days = int(hours / 24)
+	weeks = int(days / 7)
+	seconds = seconds % 60
+	minutes = minutes % 60
+	hours = hours % 24
+	days = days % 7
+	
+	time_string = ''
+	if weeks > 0:
+		time_string += '%dw' % weeks
+	if days > 0:
+		time_string += '%dd' % days
+	if hours > 0:
+		time_string += '%dh' % hours
+	if minutes > 0:
+		time_string += '%dm' % minutes
+	if hours < 1:
+		time_string += '%ds' % seconds
+	
+	return time_string
+	
 class ConsoleLogger(object):
 	"""This class will handle printing messages to the console."""
 
-	TIME_FORMAT = '[%Y-%m-%d %H:%M:%S]'
+	TIME_FORMAT = '%Y-%m-%d %H:%M:%S |'
 
 	UPDATE_TIME = 1.0
 
@@ -157,9 +181,9 @@ class ConsoleLogger(object):
 	def reportConnectionFailed(self):
 		self.log('Failed to connect, retrying...')
 
-	def reportDebug(self, message):
+	def reportDebug(self, message, update=True):
 		if self.verbose:
-			self.log(message)
+			self.log(message, update)
 			
 	def printSummary(self, settings):
 		self.say('Run Summary:', True, True)
@@ -169,7 +193,7 @@ class ConsoleLogger(object):
 		self.say('JTAG chain: %d' % self.chain, True, True)
 		self.say('Number of FPGAs: %d' % len(self.chain_list), True, True)
 		secs = time() - self.start_time
-		self.say('Running time: %d mins' % (secs/60), True, True)
+		self.say('Running time: %s' % formatTime(secs), True, True)
 		if secs <= 0:
 			secs = 1
 		self.say('Getwork interval: %d secs' % settings.getwork_interval, True, True)
@@ -199,25 +223,24 @@ class ConsoleLogger(object):
 		#only update if last update was more than UPDATE_TIME seconds ago
 		dt = time() - self.lastUpdate
 		if force or dt > self.UPDATE_TIME:
-			status = '[%sH/s]' % formatNumber(self.getRate()/1000)
+			status = '%sH/s' % formatNumber(self.getRate()/1000)
 			if self.verbose:
 				for chain in self.chain_list:
 					acc = self.accepted[chain]
 					rej = self.invalid[chain]
 					if (acc+rej) > 0:
-						status += ' [%d: %d/%d %.1f%%]' % (chain, acc, rej, 100.*rej/(acc+rej))
+						status += ' | %d: %d/%d %.1f%%' % (chain, acc, rej, 100.*rej/(acc+rej))
 					else:
-						status += ' [%d: %d/%d]' % (chain, acc, rej)
-				status += ' ['#%d nonces/' % (sum(self.accepted)+sum(self.invalid))
-				status += '%d min]' % ((time()-self.start_time)/60)
-				status += ' ' + self.serial
+						status += ' | %d: %d/%d' % (chain, acc, rej)
+				status += ' | ' + formatTime(time()-self.start_time)
+				status += ' | ' + self.serial
 			else:
 				acc = sum(self.accepted)
 				rej = sum(self.invalid)
 				if (acc+rej) > 0:
-					status += ' [%d/%d (%.2f%%)]' % (acc, rej, 100.*rej/(acc+rej))
+					status += ' | %d/%d (%.2f%%)' % (acc, rej, 100.*rej/(acc+rej))
 				else:
-					status += ' [%d/%d]' % (acc, rej)
+					status += ' | %d/%d' % (acc, rej)
 				status += ' ' + self.sparkline
 			self.say(status)
 			self.lastUpdate = time()
