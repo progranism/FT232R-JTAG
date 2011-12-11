@@ -196,9 +196,7 @@ def fpgaWriteJob(jtag, job):
 
 	#logger.reportDebug("(FPGA%d) Loading job data..." % jtag.chain)
 
-	#start_time = time.time()
 	#jtag._setAsyncMode()
-	#jtag.async_record = ""
 	
 	jtag.instruction(USER_INSTRUCTION)
 	jtag.shift_ir()
@@ -215,13 +213,10 @@ def fpgaWriteJob(jtag, job):
 	
 	jtag.tap.reset()
 
-	#print "It took %f seconds to record async data." % (time.time() - start_time)
-
 	ft232r.flush()
-
-	#print "It took %.1f seconds to write data." % (time.time() - start_time)
 	
-	logger.reportDebug("(FPGA%d) Job data loaded in %.3f seconds" % (jtag.chain, (time.time() - start_time)))
+	#logger.reportDebug("(FPGA%d) Job data loaded in %.3f seconds" % (jtag.chain, (time.time() - start_time)))
+	logger.reportDebug("(FPGA%d) Job data loaded" % jtag.chain)
 
 def connect(proto, host, timeout):
 	connector = httplib.HTTPSConnection if proto == 'https' else httplib.HTTPConnection
@@ -260,7 +255,7 @@ def failure(msg):
 def getwork(connection, chain, data=None):
 	try:
 		if not connection:
-			logger.reportDebug("(FPGA%d) Connecting..." % chain)
+			logger.reportDebug("Connecting to server...")
 			connection = connect(proto, host, timeout)
 			#connection.set_debuglevel(1)
 		if data is None:
@@ -289,41 +284,22 @@ def sendGold(connection, gold, chain):
 	hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 	data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 	
-	#rpc_lock.acquire()
 	(connection, accepted) = getwork(connection, chain, data)
-	#rpc_lock.release()
+	if connection is None:
+		return None
 	
 	logger.reportFound(hex(gold.nonce)[2:], accepted, chain)
 	return connection
 	
 
-def getworkloop(chain):
+def getworkloop(chain_list):
 	connection = None
-	(connection, work) = getwork(connection, chain)
-	if connection is not None:
-		logger.reportConnected(True)
-	last_job = None
-	if work is not None:
-		try:
-			job = Object()
-			job.midstate = work['midstate']
-			job.data = work['data']
-			job.target = work['target']
-			jobqueue[chain].put(job)
-			#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
-			last_job = time.time()
-		except:
-			logger.log("(FPGA%d) Error getting work! Retrying..." % chain)
-			last_job = None
-
-	while True:
-		time.sleep(0.1)
-
-		if last_job is None or (time.time() - last_job) > settings.getwork_interval:
-			#rpc_lock.acquire()
-			(connection, work) = getwork(connection, chain)
-			#rpc_lock.release()
-			
+	last_job = [None]*2
+	for chain in chain_list:
+		(connection, work) = getwork(connection, chain)
+		if connection is not None:
+			logger.reportConnected(True)
+		if work is not None:
 			try:
 				job = Object()
 				job.midstate = work['midstate']
@@ -331,29 +307,52 @@ def getworkloop(chain):
 				job.target = work['target']
 				jobqueue[chain].put(job)
 				#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
-				last_job = time.time()
+				last_job[chain] = time.time()
 			except:
-				logger.log("(FPGA%d) Error getting work! Retrying..." % chain)
-				last_job = None
-
-		gold = None
-		try:
-			gold = goldqueue[chain].get(False)
-		except Empty:
+				last_job[chain] = None
+	
+	while True:
+		time.sleep(0.1)
+		
+		for chain in chain_list:
+			if last_job[chain] is None or (time.time() - last_job[chain]) > settings.getwork_interval:
+				(connection, work) = getwork(connection, chain)
+				
+				try:
+					job = Object()
+					job.midstate = work['midstate']
+					job.data = work['data']
+					job.target = work['target']
+					jobqueue[chain].put(job)
+					#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
+					last_job[chain] = time.time()
+				except:
+					logger.log("(FPGA%d) Error getting work! Retrying..." % chain)
+					last_job[chain] = None
+		
+		for chain in chain_list:
 			gold = None
+			try:
+				gold = goldqueue[chain].get(False)
+			except Empty:
+				gold = None
 
-		if gold is not None:
-			retries_left = NUM_RETRIES
-			connection = sendGold(connection, gold, chain)
-			while connection is None and retries_left > 0:
+			if gold is not None:
+				retries_left = NUM_RETRIES
 				connection = sendGold(connection, gold, chain)
-				retries_left -= 1
+				while connection is None and retries_left > 0:
+					connection = sendGold(connection, gold, chain)
+					retries_left -= 1
+				if connection is None:
+					logger.reportFound(chain, hex(gold.nonce)[2:], False, chain)
 
 def mineloop(chain):
 	current_job = None
-	ft232r_lock.acquire()
-	fpgaClearQueue(jtag[chain])
-	ft232r_lock.release()
+	try:
+		ft232r_lock.acquire()
+		fpgaClearQueue(jtag[chain])
+	finally:
+		ft232r_lock.release()
 	
 	while True:
 		time.sleep(0.1)
@@ -368,14 +367,16 @@ def mineloop(chain):
 		
 		if job is not None:
 			#logger.reportDebug("(FPGA%d) Loading new job..." % chain)
-			ft232r_lock.acquire()
-			if current_job is not None:
-				#logger.reportDebug("(FPGA%d) Checking for nonce*..." % chain)
-				nonce = fpgaReadNonce(jtag[chain])
-			#logger.reportDebug("(FPGA%d) Writing job..." % chain)
-			fpgaWriteJob(jtag[chain], job)
-			#fpgaClearQueue(jtag[chain])
-			ft232r_lock.release()
+			try:
+				ft232r_lock.acquire()
+				if current_job is not None:
+					#logger.reportDebug("(FPGA%d) Checking for nonce*..." % chain)
+					nonce = fpgaReadNonce(jtag[chain])
+				#logger.reportDebug("(FPGA%d) Writing job..." % chain)
+				fpgaWriteJob(jtag[chain], job)
+				#fpgaClearQueue(jtag[chain])
+			finally:
+				ft232r_lock.release()
 			if nonce is not None:
 				logger.reportDebug("(FPGA%d) Golden nonce found" % chain)
 				gold = Object()
@@ -394,9 +395,11 @@ def mineloop(chain):
 		
 		if current_job is not None:
 			#logger.reportDebug("(FPGA%d) Checking for nonce..." % chain)
-			ft232r_lock.acquire()
-			nonce = fpgaReadNonce(jtag[chain])
-			ft232r_lock.release()
+			try:
+				ft232r_lock.acquire()
+				nonce = fpgaReadNonce(jtag[chain])
+			finally:
+				ft232r_lock.release()
 			
 			if nonce is not None:
 				logger.reportDebug("(FPGA%d) Golden nonce found" % chain)
@@ -466,24 +469,25 @@ try:
 		
 		logger.log("Connected to %d FPGAs" % fpga_num)
 		
-		getworkthread = [None, None]
-		minethread = [None, None]
+		
+		
 		
 		jobqueue = [None, None]
 		goldqueue = [None, None]
 		
 		ft232r_lock = Lock()
-		rpc_lock = Lock()
 		
 		logger.start()
+		
+		# Start HTTP thread(s)
+		getworkthread = Thread(target=getworkloop, args=(chain_list,))
+		getworkthread.daemon = True
+		getworkthread.start()
+		
+		minethread = [None, None]
 		for chain in chain_list:
 			jobqueue[chain] = Queue()
 			goldqueue[chain] = Queue()
-			
-			# Start HTTP thread(s)
-			getworkthread[chain] = Thread(target=getworkloop, args=(chain,))
-			getworkthread[chain].daemon = True
-			getworkthread[chain].start()
 			
 			# Start mining thread(s)
 			minethread[chain] = Thread(target=mineloop, args=(chain,))
@@ -494,11 +498,11 @@ try:
 			time.sleep(1)
 			logger.updateStatus()
 			for chain in chain_list:
-				if getworkthread[chain] is None or not getworkthread[chain].isAlive():
-					logger.log("Restarting getworkthread for chain %d" % chain)
-					getworkthread[chain] = Thread(target=getworkloop, args=(chain,))
-					getworkthread[chain].daemon = True
-					getworkthread[chain].start()
+				if getworkthread is None or not getworkthread.isAlive():
+					logger.log("Restarting getworkthread")
+					getworkthread = Thread(target=getworkloop, args=(chain_list,))
+					getworkthread.daemon = True
+					getworkthread.start()
 				if minethread[chain] is None or not minethread[chain].isAlive():
 					logger.log("Restarting minethread for chain %d" % chain)
 					minethread[chain] = Thread(target=mineloop, args=(chain,))
