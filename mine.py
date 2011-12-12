@@ -43,8 +43,8 @@ parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
                   help="Device number, default 0 (only needed if you have more than one board)")
 parser.add_option("-c", "--chain", type="int", dest="chain", default=2,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 2)")
-parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=30,
-                  help="Getwork interval in seconds (default 30)")
+parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=20,
+                  help="Getwork interval in seconds (default 20)")
 parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
                   help="Verbose logging")
 parser.add_option("-u", "--url", type="str", dest="url",
@@ -341,6 +341,7 @@ def getworkloop(chain_list):
 				retries_left = NUM_RETRIES
 				connection = sendGold(connection, gold, chain)
 				while connection is None and retries_left > 0:
+					logger.reportDebug("(FPGA%d) Error sending nonce! Retrying..." % chain)
 					connection = sendGold(connection, gold, chain)
 					retries_left -= 1
 				if connection is None:
@@ -426,8 +427,8 @@ if settings.worker is None:
 	print "ERROR: Worker not specified!"
 	parser.print_usage()
 	exit()
-postdata = {'method': 'getwork', 'id': 1}
-headers = {"User-Agent": 'FPGAMiner', 
+postdata = {'method': 'getwork', 'id': 'json'}
+headers = {"User-Agent": 'x6500-miner',
            "Authorization": 'Basic ' + b64encode(settings.worker),
            "Content-Type": 'application/json'
           }

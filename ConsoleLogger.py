@@ -45,6 +45,7 @@ def formatNumber(n):
 	return '%s%s %s' % (whole, decimal, prefixes[i])
 	
 def formatTime(seconds):
+	"""Take a number of seconds and turn it into a string like 32m18s"""
 	minutes = int(seconds / 60)
 	hours = int(minutes / 60)
 	days = int(hours / 24)
@@ -64,6 +65,7 @@ def formatTime(seconds):
 	if minutes > 0:
 		time_string += '%dm' % minutes
 	if hours < 1:
+		# hide the seconds when we're over an hour
 		time_string += '%ds' % seconds
 	
 	return time_string
