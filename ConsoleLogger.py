@@ -238,7 +238,7 @@ class ConsoleLogger(object):
 				acc = sum(self.accepted)
 				rej = sum(self.invalid)
 				if (acc+rej) > 0:
-					status += ' | %d/%d (%.2f%%)' % (acc, rej, 100.*rej/(acc+rej))
+					status += ' | %d/%d %.2f%%' % (acc, rej, 100.*rej/(acc+rej))
 				else:
 					status += ' | %d/%d' % (acc, rej)
 				status += ' ' + self.sparkline

@@ -271,8 +271,8 @@ def getwork(connection, chain, data=None):
 	except RPCError as e:
 		logger.reportDebug("RPCError! %s" % e)
 		return (connection, e)
-	except IOError:
-		logger.reportDebug("IOError!")
+	except IOError as e:
+		logger.reportDebug("IOError! %s" % e)
 	except ValueError:
 		logger.reportDebug("ValueError!")
 	except httplib.HTTPException:
@@ -344,7 +344,7 @@ def getworkloop(chain_list):
 					connection = sendGold(connection, gold, chain)
 					retries_left -= 1
 				if connection is None:
-					logger.reportFound(chain, hex(gold.nonce)[2:], False, chain)
+					logger.reportFound(hex(gold.nonce)[2:], False, chain)
 
 def mineloop(chain):
 	current_job = None
