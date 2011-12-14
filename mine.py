@@ -21,16 +21,13 @@
 
 from ft232r import FT232R, FT232R_PortList
 from jtag import JTAG
+from ConsoleLogger import ConsoleLogger
+from rpcClient import RPCClient
 import time
 from optparse import OptionParser
 import traceback
-from base64 import b64encode
-from json import dumps, loads
 from threading import Thread, Lock
 from Queue import Queue, Empty
-import httplib
-import socket
-from ConsoleLogger import ConsoleLogger
 from struct import pack, unpack
 from hashlib import sha256
 
@@ -52,18 +49,6 @@ parser.add_option("-u", "--url", type="str", dest="url",
 parser.add_option("-w", "--worker", type="str", dest="worker",
                   help="Worker username and password for the pool, e.g. user:pass")
 settings, args = parser.parse_args()
-
-# Socket wrapper to enable socket.TCP_NODELAY and KEEPALIVE
-realsocket = socket.socket
-def socketwrap(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=0):
-	sockobj = realsocket(family, type, proto)
-	sockobj.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-	sockobj.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-	return sockobj
-socket.socket = socketwrap
-
-class NotAuthorized(Exception): pass
-class RPCError(Exception): pass
 
 class Object(object):
 	pass
@@ -185,7 +170,8 @@ def fpgaWriteJob(jtag, job):
 	# The first 64 bytes of data are already hashed (hence midstate),
 	# so we skip that. Of the last 64 bytes, 52 bytes are constant and
 	# not needed by the FPGA.
-	start_time = time.time()
+	
+	#start_time = time.time()
 	
 	midstate = hexstr2array(job.midstate)
 	data = hexstr2array(job.data)[64:64+12]
@@ -218,85 +204,11 @@ def fpgaWriteJob(jtag, job):
 	#logger.reportDebug("(FPGA%d) Job data loaded in %.3f seconds" % (jtag.chain, (time.time() - start_time)))
 	logger.reportDebug("(FPGA%d) Job data loaded" % jtag.chain)
 
-def connect(proto, host, timeout):
-	connector = httplib.HTTPSConnection if proto == 'https' else httplib.HTTPConnection
-
-	return connector(host, strict=False, timeout=timeout)
-
-def request(connection, url, headers, data=None):
-	result = response = None
-
-	try:
-		if data is not None:
-			connection.request('POST', url, data, headers)
-		else:
-			connection.request('GET', url, headers=headers)
-
-		response = connection.getresponse()
-
-		if response.status == httplib.UNAUTHORIZED:
-			raise NotAuthorized()
-
-		result = loads(response.read())
-
-		if result['error']:
-			raise RPCError(result['error']['message'])
-
-		return (connection, result)
-	finally:
-		if not result or not response or (response.version == 10 and response.getheader('connection', '') != 'keep-alive') or response.getheader('connection', '') == 'close':
-			connection.close()
-			connection = None
-
-def failure(msg):
-	logger.log(msg)
-	exit()
-
-def getwork(connection, chain, data=None):
-	try:
-		if not connection:
-			logger.reportDebug("Connecting to server...")
-			connection = connect(proto, host, timeout)
-			#connection.set_debuglevel(1)
-		if data is None:
-			postdata['params']  = []
-			#logger.reportDebug("(FPGA%d) Requesting work..." % chain)
-		else:
-			postdata['params'] = [data]
-			#logger.reportDebug("(FPGA%d) Submitting nonce..." % chain)
-		(connection, result) = request(connection, '/', headers, dumps(postdata))
-		return (connection, result['result'])
-	except NotAuthorized:
-		failure('Wrong username or password.')
-	except RPCError as e:
-		logger.reportDebug("RPCError! %s" % e)
-		return (connection, e)
-	except IOError as e:
-		logger.reportDebug("IOError! %s" % e)
-	except ValueError:
-		logger.reportDebug("ValueError!")
-	except httplib.HTTPException:
-		#logger.reportDebug("HTTP Error!")
-		pass
-	return (None, None)
-
-def sendGold(connection, gold, chain):
-	hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
-	data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
-	
-	(connection, accepted) = getwork(connection, chain, data)
-	if connection is None:
-		return None
-	
-	logger.reportFound(hex(gold.nonce)[2:], accepted, chain)
-	return connection
-	
-
 def getworkloop(chain_list):
 	connection = None
 	last_job = [None]*2
 	for chain in chain_list:
-		(connection, work) = getwork(connection, chain)
+		(connection, work) = rpcclient.getwork(connection, chain)
 		if connection is not None:
 			logger.reportConnected(True)
 		if work is not None:
@@ -316,7 +228,7 @@ def getworkloop(chain_list):
 		
 		for chain in chain_list:
 			if last_job[chain] is None or (time.time() - last_job[chain]) > settings.getwork_interval:
-				(connection, work) = getwork(connection, chain)
+				(connection, work) = rpcclient.getwork(connection, chain)
 				
 				try:
 					job = Object()
@@ -339,10 +251,10 @@ def getworkloop(chain_list):
 
 			if gold is not None:
 				retries_left = NUM_RETRIES
-				connection = sendGold(connection, gold, chain)
+				connection = rpcclient.sendGold(connection, gold, chain)
 				while connection is None and retries_left > 0:
 					logger.reportDebug("(FPGA%d) Error sending nonce! Retrying..." % chain)
-					connection = sendGold(connection, gold, chain)
+					connection = rpcclient.sendGold(connection, gold, chain)
 					retries_left -= 1
 				if connection is None:
 					logger.reportFound(hex(gold.nonce)[2:], False, chain)
@@ -412,7 +324,6 @@ def mineloop(chain):
 						logger.log("(FPGA%d) Queue full! Lost a share!" % chain)
 
 
-proto = "http"
 if settings.url is None:
 	print "ERROR: URL not specified!"
 	parser.print_usage()
@@ -422,14 +333,9 @@ if settings.worker is None:
 	print "ERROR: Worker not specified!"
 	parser.print_usage()
 	exit()
-postdata = {'method': 'getwork', 'id': 'json'}
-headers = {"User-Agent": 'x6500-miner',
-           "Authorization": 'Basic ' + b64encode(settings.worker),
-           "Content-Type": 'application/json'
-          }
-timeout = 5
 
 logger = ConsoleLogger(settings.chain, settings.verbose)
+rpcclient = RPCClient(host, settings.worker, logger)
 
 try:
 	with FT232R() as ft232r:
@@ -487,8 +393,8 @@ try:
 		
 		minethread = [None, None]
 		for chain in chain_list:
-			jobqueue[chain] = Queue()
-			goldqueue[chain] = Queue()
+			jobqueue[chain] = Queue(maxsize=1) # store at most one job
+			goldqueue[chain] = Queue() # store as many nonces as you can
 			
 			# Start mining thread(s)
 			minethread[chain] = Thread(target=mineloop, args=(chain,))
