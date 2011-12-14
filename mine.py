@@ -384,13 +384,13 @@ def mineloop(chain):
 				gold.job = current_job
 				gold.nonce = nonce
 				if checkHash(gold) is False:
-					logger.reportDebug("(FPGA%d) Invalid nonce!" % chain)
+					logger.reportError(hex(gold.nonce)[2:], chain)
 				else:
 					try:
 						goldqueue[chain].put(gold, block=True, timeout=10)
 						#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
 					except Full:
-						logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
+						logger.log("(FPGA%d) Queue full! Lost a share!" % chain)
 					
 			current_job = job
 		
@@ -408,13 +408,13 @@ def mineloop(chain):
 				gold.job = current_job
 				gold.nonce = nonce & 0xFFFFFFFF
 				if checkHash(gold) is False:
-					logger.reportDebug("(FPGA%d) Invalid nonce!" % chain)
+					logger.reportError(hex(gold.nonce)[2:], chain)
 				else:
 					try:
 						goldqueue[chain].put(gold, block=True, timeout=10)
 						#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
 					except Full:
-						logger.log("(FPGA%d) Queue error! Lost a share!" % chain)
+						logger.log("(FPGA%d) Queue full! Lost a share!" % chain)
 
 
 proto = "http"

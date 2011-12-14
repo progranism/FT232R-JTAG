@@ -78,7 +78,7 @@ class ConsoleLogger(object):
 	UPDATE_TIME = 1.0
 
 	SPARKLINE_LENGTH = 10 # number of bins to display of the sparkline
-	SPARKLINE_BINSIZE = 5 # number of mins for each bin of the sparkline
+	SPARKLINE_BINSIZE = 6 # number of mins for each bin of the sparkline
 
 	def __init__(self, chain=0, verbose=False): 
 		self.chain = chain
@@ -94,6 +94,7 @@ class ConsoleLogger(object):
 		self.rate = []
 		self.last_rate_update = time()
 		self.accepted = [0, 0]
+		self.rejected = [0, 0]
 		self.invalid = [0, 0]
 		self.recent_shares = 0
 		self.sparkline = ''
@@ -157,7 +158,7 @@ class ConsoleLogger(object):
 		if accepted is not None and accepted == True:
 			self.accepted[chain] += 1
 		else:
-			self.invalid[chain] += 1
+			self.rejected[chain] += 1
 			accepted = False
 			
 		self.recent_shares += 1
@@ -168,7 +169,14 @@ class ConsoleLogger(object):
 		else:
 			self.log('%s %s' % ('accepted' if accepted else 'rejected', 
 				 hash))
-			
+	
+	def reportError(self, hash, chain=0):
+		self.invalid[chain] += 1
+		if self.verbose:
+			self.log('(FPGA%d) %s invalid!!' % (chain, hash))
+		else:
+			self.log('%s invalid!!' % hash)
+	
 	def reportMsg(self, message):
 		self.log(('MSG: ' + message), True, True)
 
@@ -202,19 +210,21 @@ class ConsoleLogger(object):
 		total_nonces = 0
 		for chain in self.chain_list:
 			acc = self.accepted[chain]
-			rej = self.invalid[chain]
+			rej = self.rejected[chain]
+			inv = self.invalid[chain]
 			total = acc + rej
 			total_nonces += total
 			self.say('Chain %d:' % chain, True, True)
 			self.say('  Accepted: %d' % acc, True, True)
 			if total > 0:
-				self.say('  Rejected: %d (%.2f%%)' % (rej, (100. * rej / total)), True, True)
+				self.say('  Rejected: %d (%.2f%%)' % (rej, 100. * rej / total), True, True)
+				self.say('  Invalid: %d (%.2f%%)' % (inv, 100. * inv / (inv+total)), True, True)
 			else:
 				self.say('  Rejected: %d' % rej, True, True)
-			self.say('  Total: %d' % total, True, True)
+				self.say('  Invalid: %d' % inv, True, True)
 			self.say('  Accepted hashrate: %sH/s' % (formatNumber(pow(2,32)*acc/(secs*1000))),
 			         True, True)
-			self.say('  Total hashrate: %sH/s' % (formatNumber(pow(2,32)*total/(secs*1000))),
+			self.say('  Hashrate w/ rejects: %sH/s' % (formatNumber(pow(2,32)*total/(secs*1000))),
 			         True, True)
 		self.say('Total hashrate for device: %sH/s / %sH/s' % (
 		         formatNumber(pow(2,32)*sum(self.accepted)/(secs*1000)),
@@ -229,20 +239,22 @@ class ConsoleLogger(object):
 			if self.verbose:
 				for chain in self.chain_list:
 					acc = self.accepted[chain]
-					rej = self.invalid[chain]
+					rej = self.rejected[chain]
+					inv = self.invalid[chain]
 					if (acc+rej) > 0:
-						status += ' | %d: %d/%d %.1f%%' % (chain, acc, rej, 100.*rej/(acc+rej))
+						status += ' | %d: %d/%d/%d %.1f%%' % (chain, acc, rej, inv, 100.*rej/(acc+rej))
 					else:
-						status += ' | %d: %d/%d' % (chain, acc, rej)
+						status += ' | %d: %d/%d/%d' % (chain, acc, rej, inv)
 				status += ' | ' + formatTime(time()-self.start_time)
 				status += ' | ' + self.serial
 			else:
 				acc = sum(self.accepted)
-				rej = sum(self.invalid)
+				rej = sum(self.rejected)
+				inv = sum(self.invalid)
 				if (acc+rej) > 0:
-					status += ' | %d/%d %.2f%%' % (acc, rej, 100.*rej/(acc+rej))
+					status += ' | %d/%d/%d %.2f%%' % (acc, rej, inv, 100.*rej/(acc+rej))
 				else:
-					status += ' | %d/%d' % (acc, rej)
+					status += ' | %d/%d/%d' % (acc, rej, inv)
 				status += ' ' + self.sparkline
 			self.say(status)
 			self.lastUpdate = time()
