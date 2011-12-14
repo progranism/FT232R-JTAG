@@ -349,11 +349,6 @@ def getworkloop(chain_list):
 
 def mineloop(chain):
 	current_job = None
-	try:
-		ft232r_lock.acquire()
-		fpgaClearQueue(jtag[chain])
-	finally:
-		ft232r_lock.release()
 	
 	while True:
 		time.sleep(0.1)
@@ -440,7 +435,8 @@ try:
 	with FT232R() as ft232r:
 		portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 		ft232r.open(settings.devicenum, portlist)
-		logger.reportOpened(settings.devicenum, ft232r.serial)
+		
+		logger.reportOpened(ft232r.devicenum, ft232r.serial)
 		
 		if settings.chain == 0 or settings.chain == 1:
 			chain_list = [settings.chain]
@@ -474,6 +470,13 @@ try:
 		goldqueue = [None]*2
 		
 		ft232r_lock = Lock()
+		
+		for chain in chain_list:
+			try:
+				ft232r_lock.acquire()
+				fpgaClearQueue(jtag[chain])
+			finally:
+				ft232r_lock.release()
 		
 		logger.start()
 		

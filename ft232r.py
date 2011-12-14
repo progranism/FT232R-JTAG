@@ -27,6 +27,7 @@ import time
 DEFAULT_FREQUENCY = 3000000
 
 class DeviceNotOpened(Exception): pass
+class NoAvailableDevices(Exception): pass
 class InvalidChain(Exception): pass
 class WriteError(Exception): pass
 
@@ -100,6 +101,7 @@ class FT232R:
 		self.synchronous = None
 		self.write_buffer = ""
 		self.portlist = None
+		self.devicenum = None
 		self.serial = ""
 		
 	def __enter__(self): 
@@ -119,12 +121,30 @@ class FT232R:
 		"""Open an FT232R device with devicenum and initialize with the portlist"""
 		if self.handle is not None:
 			self.close()
-
-		self._log("Opening device %i" % devicenum)
-
-		self.handle = d2xx.open(devicenum)
-
+		
+		if devicenum is None:
+			self._log("Opening first available device...")
+			devices = d2xx.listDevices()
+			available_device = False
+			for num, serial in enumerate(devices):
+				try: 
+					h = d2xx.open(num)
+					h.close()
+					available_device = True
+					break
+				except:
+					pass
+			if available_device:
+				devicenum = num
+		
+		if devicenum is not None:
+			self.handle = d2xx.open(devicenum)
+		else:
+			raise NoAvailableDevices()
+		
 		if self.handle is not None:
+			self._log("Opened device %i" % devicenum)
+			self.devicenum = devicenum
 			self.portlist = portlist
 			self.serial = self.handle.getDeviceInfo()['serial']
 			self._setBaudRate(DEFAULT_FREQUENCY)

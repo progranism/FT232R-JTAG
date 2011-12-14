@@ -29,7 +29,7 @@ from ConsoleLogger import ConsoleLogger
 
 # Option parsing:
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] <path-to-bitstream-file>")
-parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
+parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=None,
                   help="Device number, default 0 (only needed if you have more than one board)")
 parser.add_option("-c", "--chain", type="int", dest="chain", default=2,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 2)")
@@ -135,8 +135,16 @@ logger.log(" Bitstream Length: %d" % len(bitfile.bitstream), False)
 
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
-	ft232r.open(settings.devicenum, portlist)
-	logger.reportOpened(settings.devicenum, ft232r.serial)
+	try:
+		ft232r.open(settings.devicenum, portlist)
+	except ft232r.NoAvailableDevices:
+		logger.log("ERROR: No available devices!")
+		exit()
+	except ft232r.DeviceNotOpened:
+		logger.log("ERROR: Device not opened!")
+		exit()
+	
+	logger.reportOpened(ft232r.devicenum, ft232r.serial)
 	
 	if settings.chain == 2:
 		chain_list = [0,1]
