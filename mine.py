@@ -35,7 +35,7 @@ NUM_RETRIES = 5
 USER_INSTRUCTION = 0b000010
 
 # Option parsing:
-parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] -p <pool-url> -u <user:pass>")
+parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] -u <pool-url> -w <user:pass>")
 parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
                   help="Device number, default 0 (only needed if you have more than one board)")
 parser.add_option("-c", "--chain", type="int", dest="chain", default=2,
