@@ -132,7 +132,7 @@ class ConsoleLogger(object):
 		'''Make a simple graph of hashrate over time.
 		Inspired by: https://github.com/holman/spark
 		'''
-		ticks = (u'▁', u'▂', u'▃', u'▄', u'▅', u'▆', u'▇', u'█')
+		ticks = (u'▁', u'▂', u'▃', u'▄', u'▅', u'▆', u'▇')
 		sparkline = ''
 		max_rate = max(self.rate)
 		for rate in self.rate:
