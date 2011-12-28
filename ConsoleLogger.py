@@ -116,7 +116,7 @@ class ConsoleLogger(object):
 				 self.rate.pop(0)
 				 self.rate.append(recent_rate)
 			self.recent_shares = 0
-			self.sparkline = self.makeSparkline()
+			#self.sparkline = self.makeSparkline()
 			self.last_rate_update = time()
 
 		secs = time() - self.last_rate_update
@@ -256,7 +256,7 @@ class ConsoleLogger(object):
 					status += ' | %d/%d/%d %.2f%%' % (acc, rej, inv, 100.*rej/(acc+rej))
 				else:
 					status += ' | %d/%d/%d' % (acc, rej, inv)
-				status += ' ' + self.sparkline
+				#status += ' ' + self.sparkline
 			self.say(status)
 			self.lastUpdate = time()
 	
