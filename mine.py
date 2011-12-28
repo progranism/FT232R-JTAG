@@ -36,7 +36,7 @@ USER_INSTRUCTION = 0b000010
 
 # Option parsing:
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] -u <pool-url> -w <user:pass>")
-parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=0,
+parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=None,
                   help="Device number, default 0 (only needed if you have more than one board)")
 parser.add_option("-c", "--chain", type="int", dest="chain", default=2,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 2)")
