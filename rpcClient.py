@@ -25,6 +25,8 @@ import time
 from base64 import b64encode
 from json import dumps, loads
 from urlparse import urlsplit
+from threading import Thread
+from Queue import Empty
 
 class NotAuthorized(Exception): pass
 class RPCError(Exception): pass
@@ -43,15 +45,19 @@ class Object(object):
 
 class RPCClient:
 	
-	def __init__(self, host, worker, logger, jobqueue):
-		self.host = host
+	NUM_RETRIES = 5
+	
+	def __init__(self, settings, logger, jobqueue, goldqueue):
+		self.host = settings.url
+		self.getwork_interval = settings.getwork_interval
 		self.logger = logger
 		self.jobqueue = jobqueue
+		self.goldqueue = goldqueue
 		self.chain_list = []
 		self.proto = "http"
 		self.postdata = {'method': 'getwork', 'id': 'json'}
 		self.headers = {"User-Agent": 'x6500-miner',
-		                "Authorization": 'Basic ' + b64encode(worker),
+		                "Authorization": 'Basic ' + b64encode(settings.worker),
 		                "Content-Type": 'application/json'
 		               }
 		self.timeout = 5
@@ -60,6 +66,21 @@ class RPCClient:
 		self.long_poll_active = False
 		self.long_poll_url = ''
 		self.lp_connection = None
+		self.connection = None
+		self.last_job = [None]*2
+		self.getwork_thread = None
+		self.longpoll_thread = None
+	
+	def start(self):
+		# Start getwork thread
+		self.getwork_thread = Thread(target=self.getwork_loop)
+		self.getwork_thread.daemon = True
+		self.getwork_thread.start()
+		
+		# Start long-polling thread:
+		self.longpoll_thread = Thread(target=self.longpoll_loop)
+		self.longpoll_thread.daemon = True
+		self.longpoll_thread.start()
 	
 	def set_chain_list(self, chain_list):
 		self.chain_list = chain_list
@@ -108,6 +129,7 @@ class RPCClient:
 			if not connection:
 				self.logger.reportDebug("Connecting to server...")
 				connection = self.connect(self.proto, self.host, self.timeout)
+				self.logger.reportConnected(True)
 				#connection.set_debuglevel(1)
 			if data is None:
 				self.postdata['params']  = []
@@ -130,34 +152,85 @@ class RPCClient:
 			#self.logger.reportDebug("HTTP Error!")
 			pass
 		return (None, None)
-
-	def sendGold(self, connection, gold, chain):
-		hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
-		data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
-		
-		(connection, accepted) = self.getwork(connection, chain, data)
-		if connection is None:
-			return None
-		
-		self.logger.reportFound(hex(gold.nonce)[2:], accepted, chain)
-		return connection
-		
-	def queue_work(self, work):
-		for chain in self.chain_list:
-			if work is None:
-				(connection, work) = self.getwork(None, chain, None)
-			#try:
+	
+	def getNewJob(self, chain, work=None):
+		if work is None:
+			(self.connection, work) = self.getwork(self.connection, chain)
+		try:
 			job = Object()
 			job.midstate = work['midstate']
 			job.data = work['data']
 			job.target = work['target']
 			self.jobqueue[chain].put(job)
-			self.logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, self.jobqueue[chain].qsize()))
-			work = None
-			#except:
-			#	self.logger.reportDebug("(FPGA%d) jobqueue not loaded!")
+			#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
+			self.last_job[chain] = time.time()
+			return True
+		except:
+			self.logger.log("(FPGA%d) Error getting work! Retrying..." % chain)
+			self.last_job[chain] = None
+			return False
+
+	def sendGold(self, gold, chain):
+		hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
+		data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 		
-	def long_poll_thread(self):
+		(self.connection, accepted) = self.getwork(self.connection, chain, data)
+		if self.connection is None:
+			return False
+		
+		self.logger.reportFound(hex(gold.nonce)[2:], accepted, chain)
+		return True
+		
+	def queue_work(self, work):
+		for chain in self.chain_list:
+			# Empty the job queue:
+			try:
+				self.jobqueue[chain].get(False)
+			except Empty:
+				pass
+			# Empty the gold queue:
+			try:
+				self.goldqueue[chain].get(False)
+			except Empty:
+				pass
+			# Load new jobs:
+			try:
+				# A long-poll event returns a new job, so load that one on the first chain:
+				self.getNewJob(chain, work)
+				# Clear that job so that getNewJob will fetch a new one when called on subsequent chains:
+				work = None
+			except:
+				pass
+	
+	def getwork_loop(self):
+		for chain in self.chain_list:
+			self.getNewJob(chain)
+		
+		while True:
+			time.sleep(0.1)
+			
+			for chain in self.chain_list:
+				if self.last_job[chain] is None or (time.time() - self.last_job[chain]) > self.getwork_interval:
+					self.getNewJob(chain)
+			
+			for chain in self.chain_list:
+				gold = None
+				try:
+					gold = self.goldqueue[chain].get(False)
+				except Empty:
+					gold = None
+
+				if gold is not None:
+					retries_left = self.NUM_RETRIES
+					success = self.sendGold(gold, chain)
+					while not success and retries_left > 0:
+						self.logger.reportDebug("(FPGA%d) Error sending nonce! Retrying..." % chain)
+						success = self.sendGold(gold, chain)
+						retries_left -= 1
+					if not success:
+						self.logger.reportFound(hex(gold.nonce)[2:], False, chain)
+	
+	def longpoll_loop(self):
 		last_host = None
 		while True:
 			time.sleep(1)

@@ -204,61 +204,6 @@ def fpgaWriteJob(jtag, job):
 	#logger.reportDebug("(FPGA%d) Job data loaded in %.3f seconds" % (jtag.chain, (time.time() - start_time)))
 	logger.reportDebug("(FPGA%d) Job data loaded" % jtag.chain)
 
-def getworkloop(chain_list):
-	connection = None
-	last_job = [None]*2
-	for chain in chain_list:
-		(connection, work) = rpcclient.getwork(connection, chain)
-		if connection is not None:
-			logger.reportConnected(True)
-		if work is not None:
-			try:
-				job = Object()
-				job.midstate = work['midstate']
-				job.data = work['data']
-				job.target = work['target']
-				jobqueue[chain].put(job)
-				#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
-				last_job[chain] = time.time()
-			except:
-				last_job[chain] = None
-	
-	while True:
-		time.sleep(0.1)
-		
-		for chain in chain_list:
-			if last_job[chain] is None or (time.time() - last_job[chain]) > settings.getwork_interval:
-				(connection, work) = rpcclient.getwork(connection, chain)
-				
-				try:
-					job = Object()
-					job.midstate = work['midstate']
-					job.data = work['data']
-					job.target = work['target']
-					jobqueue[chain].put(job)
-					#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
-					last_job[chain] = time.time()
-				except:
-					logger.log("(FPGA%d) Error getting work! Retrying..." % chain)
-					last_job[chain] = None
-		
-		for chain in chain_list:
-			gold = None
-			try:
-				gold = goldqueue[chain].get(False)
-			except Empty:
-				gold = None
-
-			if gold is not None:
-				retries_left = NUM_RETRIES
-				connection = rpcclient.sendGold(connection, gold, chain)
-				while connection is None and retries_left > 0:
-					logger.reportDebug("(FPGA%d) Error sending nonce! Retrying..." % chain)
-					connection = rpcclient.sendGold(connection, gold, chain)
-					retries_left -= 1
-				if connection is None:
-					logger.reportFound(hex(gold.nonce)[2:], False, chain)
-
 def mineloop(chain):
 	current_job = None
 	
@@ -328,7 +273,6 @@ if settings.url is None:
 	print "ERROR: URL not specified!"
 	parser.print_usage()
 	exit()
-host = settings.url
 if settings.worker is None:
 	print "ERROR: Worker not specified!"
 	parser.print_usage()
@@ -339,7 +283,7 @@ jobqueue = [None]*2
 goldqueue = [None]*2
 
 logger = ConsoleLogger(settings.chain, settings.verbose)
-rpcclient = RPCClient(host, settings.worker, logger, jobqueue)
+rpcclient = RPCClient(settings, logger, jobqueue, goldqueue)
 
 try:
 	with FT232R() as ft232r:
@@ -389,15 +333,7 @@ try:
 		
 		logger.start()
 		
-		# Start HTTP thread
-		getworkthread = Thread(target=getworkloop, args=(chain_list,))
-		getworkthread.daemon = True
-		getworkthread.start()
-		
-		# Start long-polling thread:
-		longpollthread = Thread(target=rpcclient.long_poll_thread)
-		longpollthread.daemon = True
-		longpollthread.start()
+		rpcclient.start()
 		
 		minethread = [None, None]
 		for chain in chain_list:
@@ -412,11 +348,7 @@ try:
 		while True:
 			time.sleep(1)
 			logger.updateStatus()
-			if getworkthread is None or not getworkthread.isAlive():
-				logger.log("Restarting getworkthread")
-				getworkthread = Thread(target=getworkloop, args=(chain_list,))
-				getworkthread.daemon = True
-				getworkthread.start()
+			# TODO: implement a watchdog for the getwork thread
 			for chain in chain_list:
 				if minethread[chain] is None or not minethread[chain].isAlive():
 					logger.log("Restarting minethread for chain %d" % chain)
