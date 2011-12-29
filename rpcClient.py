@@ -21,8 +21,10 @@
 
 import httplib
 import socket
+import time
 from base64 import b64encode
 from json import dumps, loads
+from urlparse import urlsplit
 
 class NotAuthorized(Exception): pass
 class RPCError(Exception): pass
@@ -38,10 +40,11 @@ socket.socket = socketwrap
 
 class RPCClient:
 	
-	def __init__(self, host, worker, logger):
+	def __init__(self, host, worker, logger, jobqueue):
 		self.host = host
 		self.logger = logger
-		self.connection = None
+		self.jobqueue = jobqueue
+		self.chain_list = []
 		self.proto = "http"
 		self.postdata = {'method': 'getwork', 'id': 'json'}
 		self.headers = {"User-Agent": 'x6500-miner',
@@ -49,10 +52,19 @@ class RPCClient:
 		                "Content-Type": 'application/json'
 		               }
 		self.timeout = 5
+		self.long_poll_timeout = 3600
+		self.long_poll_max_askrate = 60 - self.timeout
+		self.long_poll_active = False
+		self.long_poll_url = ''
+		self.lp_connection = None
+	
+	def set_chain_list(self, chain_list):
+		self.chain_list = chain_list
 
-	def connect(self):
-		connector = httplib.HTTPSConnection if self.proto == 'https' else httplib.HTTPConnection
-		return connector(self.host, strict=False, timeout=self.timeout)
+	def connect(self, proto, host, timeout):
+		if proto == 'https': connector = httplib.HTTPSConnection
+		else: connector = httplib.HTTPConnection
+		return connector(host, strict=True, timeout=timeout)
 
 	def request(self, connection, url, headers, data=None):
 		result = response = None
@@ -67,7 +79,12 @@ class RPCClient:
 
 			if response.status == httplib.UNAUTHORIZED:
 				raise NotAuthorized()
-
+			
+			self.long_poll_url = response.getheader('X-Long-Polling', '')
+			#self.logger.reportDebug('LP URL: %s' % self.long_poll_url)
+			
+			#self.miner.update_time = bool(response.getheader('X-Roll-NTime', ''))
+			
 			result = loads(response.read())
 
 			if result['error']:
@@ -87,7 +104,7 @@ class RPCClient:
 		try:
 			if not connection:
 				self.logger.reportDebug("Connecting to server...")
-				connection = self.connect()
+				connection = self.connect(self.proto, self.host, self.timeout)
 				#connection.set_debuglevel(1)
 			if data is None:
 				self.postdata['params']  = []
@@ -101,7 +118,7 @@ class RPCClient:
 			failure('Wrong username or password.')
 		except RPCError as e:
 			self.logger.reportDebug("RPCError! %s" % e)
-			return (connection, e)
+			return (None, None)
 		except IOError as e:
 			self.logger.reportDebug("IOError! %s" % e)
 		except ValueError:
@@ -121,4 +138,66 @@ class RPCClient:
 		
 		self.logger.reportFound(hex(gold.nonce)[2:], accepted, chain)
 		return connection
-	
+		
+	def queue_work(self, work):
+		for chain in self.chain_list:
+			if work is None:
+				(connection, work) = self.getwork(None, chain, None)
+			try:
+				job = Object()
+				job.midstate = work['midstate']
+				job.data = work['data']
+				job.target = work['target']
+				self.jobqueue[chain].put(job)
+				self.logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
+				work = None
+			except:
+				self.logger.reportDebug("(FPGA%d) jobqueue not loaded!")
+		
+	def long_poll_thread(self):
+		last_host = None
+		while True:
+			time.sleep(1)
+			url = self.long_poll_url
+			if url != '':
+				proto = self.proto
+				host = self.host
+				parsedUrl = urlsplit(url)
+				if parsedUrl.scheme != '':
+					proto = parsedUrl.scheme
+				if parsedUrl.netloc != '':
+					host = parsedUrl.netloc
+					url = url[url.find(host) + len(host):]
+					if url == '': url = '/'
+				try:
+					if host != last_host: self.close_lp_connection()
+					if not self.lp_connection:
+						self.lp_connection = self.connect(proto, host, self.long_poll_timeout)
+						self.logger.reportLongPoll("connected to %s" % host)
+						last_host = host
+					
+					self.long_poll_active = True
+					(self.lp_connection, result) = self.request(self.lp_connection, url, self.headers)
+					self.long_poll_active = False
+					self.logger.reportLongPoll('new block %s%s' % (result['result']['data'][56:64], result['result']['data'][48:56]))
+					self.queue_work(result['result'])
+					
+				except NotAuthorized:
+					self.logger.reportLongPoll('wrong username or password')
+				except RPCError as e:
+					self.logger.reportLongPoll('RPCError! %s' % e)
+				except IOError as e:
+					self.logger.reportLongPoll('IOError! %s' % e)
+					self.close_lp_connection()
+				except httplib.HTTPException:
+					self.logger.reportLongPoll('HTTPException!')
+					self.close_lp_connection()
+				except ValueError:
+					self.logger.reportLongPoll('ValueError!')
+					self.close_lp_connection()
+					
+	def close_lp_connection(self):
+		if self.lp_connection:
+			self.lp_connection.close()
+			self.lp_connection = None
+

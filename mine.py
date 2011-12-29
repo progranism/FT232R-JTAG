@@ -334,8 +334,12 @@ if settings.worker is None:
 	parser.print_usage()
 	exit()
 
+		
+jobqueue = [None]*2
+goldqueue = [None]*2
+
 logger = ConsoleLogger(settings.chain, settings.verbose)
-rpcclient = RPCClient(host, settings.worker, logger)
+rpcclient = RPCClient(host, settings.worker, logger, jobqueue)
 
 try:
 	with FT232R() as ft232r:
@@ -352,6 +356,8 @@ try:
 			logger.log("ERROR: Invalid chain option!", False)
 			parser.print_usage()
 			exit()
+			
+		rpcclient.set_chain_list(chain_list)
 		
 		jtag = [None, None]
 		fpga_num = 0
@@ -372,9 +378,6 @@ try:
 		
 		logger.log("Connected to %d FPGAs" % fpga_num, False)
 		
-		jobqueue = [None]*2
-		goldqueue = [None]*2
-		
 		ft232r_lock = Lock()
 		
 		for chain in chain_list:
@@ -390,6 +393,11 @@ try:
 		getworkthread = Thread(target=getworkloop, args=(chain_list,))
 		getworkthread.daemon = True
 		getworkthread.start()
+		
+		# Start long-polling thread:
+		longpollthread = Thread(target=rpcclient.long_poll_thread)
+		longpollthread.daemon = True
+		longpollthread.start()
 		
 		minethread = [None, None]
 		for chain in chain_list:
