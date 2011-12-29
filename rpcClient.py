@@ -38,6 +38,9 @@ def socketwrap(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=0):
 	return sockobj
 socket.socket = socketwrap
 
+class Object(object):
+	pass
+
 class RPCClient:
 	
 	def __init__(self, host, worker, logger, jobqueue):
@@ -118,7 +121,7 @@ class RPCClient:
 			failure('Wrong username or password.')
 		except RPCError as e:
 			self.logger.reportDebug("RPCError! %s" % e)
-			return (None, None)
+			return (connection, e)
 		except IOError as e:
 			self.logger.reportDebug("IOError! %s" % e)
 		except ValueError:
@@ -143,16 +146,16 @@ class RPCClient:
 		for chain in self.chain_list:
 			if work is None:
 				(connection, work) = self.getwork(None, chain, None)
-			try:
-				job = Object()
-				job.midstate = work['midstate']
-				job.data = work['data']
-				job.target = work['target']
-				self.jobqueue[chain].put(job)
-				self.logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
-				work = None
-			except:
-				self.logger.reportDebug("(FPGA%d) jobqueue not loaded!")
+			#try:
+			job = Object()
+			job.midstate = work['midstate']
+			job.data = work['data']
+			job.target = work['target']
+			self.jobqueue[chain].put(job)
+			self.logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, self.jobqueue[chain].qsize()))
+			work = None
+			#except:
+			#	self.logger.reportDebug("(FPGA%d) jobqueue not loaded!")
 		
 	def long_poll_thread(self):
 		last_host = None
