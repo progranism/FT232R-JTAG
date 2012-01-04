@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # Copyright (C) 2011 by fpgaminer <fpgaminer@bitcoin-mining.com>
 #                       fizzisist <fizzisist@fpgamining.com>
 #
@@ -37,11 +38,11 @@ USER_INSTRUCTION = 0b000010
 # Option parsing:
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] -u <pool-url> -w <user:pass>")
 parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=None,
-                  help="Device number, default 0 (only needed if you have more than one board)")
+                  help="Device number, optional. Opens the first available device by default")
 parser.add_option("-c", "--chain", type="int", dest="chain", default=2,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 2)")
-parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=30,
-                  help="Getwork interval in seconds (default 30)")
+parser.add_option("-i", "--interval", type="int", dest="getwork_interval", default=20,
+                  help="Getwork interval in seconds (default 20)")
 parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
                   help="Verbose logging")
 parser.add_option("-u", "--url", type="str", dest="url",
