@@ -27,6 +27,7 @@ from json import dumps, loads
 from urlparse import urlsplit
 from threading import Thread
 from Queue import Empty
+from struct import pack
 
 class NotAuthorized(Exception): pass
 class RPCError(Exception): pass
@@ -171,7 +172,8 @@ class RPCClient:
 			return False
 
 	def sendGold(self, gold, chain):
-		hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
+		#hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
+		hexnonce = pack('I', long(gold.nonce)).encode('hex') # suggested by m0mchil
 		data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 		
 		(self.connection, accepted) = self.getwork(self.connection, chain, data)
