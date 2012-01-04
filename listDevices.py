@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import d2xx
 
 devices = d2xx.listDevices()
