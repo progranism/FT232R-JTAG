@@ -147,8 +147,8 @@ class RPCClient:
 			return (connection, e)
 		except IOError as e:
 			self.logger.reportDebug("IOError! %s" % e)
-		except ValueError:
-			self.logger.reportDebug("ValueError!")
+		except ValueError as e:
+			self.logger.reportDebug("ValueError! %s" % e)
 		except httplib.HTTPException:
 			#self.logger.reportDebug("HTTP Error!")
 			pass
@@ -270,8 +270,8 @@ class RPCClient:
 				except httplib.HTTPException:
 					self.logger.reportLongPoll('HTTPException!')
 					self.close_lp_connection()
-				except ValueError:
-					self.logger.reportLongPoll('ValueError!')
+				except ValueError as e:
+					self.logger.reportLongPoll('ValueError! %s' % e)
 					self.close_lp_connection()
 					
 	def close_lp_connection(self):
