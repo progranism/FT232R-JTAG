@@ -77,7 +77,7 @@ class ConsoleLogger(object):
 
 	UPDATE_TIME = 1.0
 
-	SPARKLINE_LENGTH = 10 # number of bins to display of the sparkline
+	SPARKLINE_LENGTH = 30 # number of bins to display of the sparkline
 	SPARKLINE_BINSIZE = 6 # number of mins for each bin of the sparkline
 
 	def __init__(self, chain=0, verbose=False): 
@@ -212,12 +212,14 @@ class ConsoleLogger(object):
 			secs = 1
 		self.say('Getwork interval: %d secs' % settings.getwork_interval, True, True)
 		total_nonces = 0
+		total_invalids = 0
 		for chain in self.chain_list:
 			acc = self.accepted[chain]
 			rej = self.rejected[chain]
 			inv = self.invalid[chain]
 			total = acc + rej
 			total_nonces += total
+			total_invalids += inv
 			self.say('Chain %d:' % chain, True, True)
 			self.say('  Accepted: %d' % acc, True, True)
 			if total > 0:
@@ -230,9 +232,12 @@ class ConsoleLogger(object):
 			         True, True)
 			self.say('  Hashrate w/ rejects: %sH/s' % (formatNumber(pow(2,32)*total/(secs*1000))),
 			         True, True)
-		self.say('Total hashrate for device: %sH/s / %sH/s' % (
+			self.say('  Hashrate w/ invalids: %sH/s' % (formatNumber(pow(2,32)*(total+inv)/(secs*1000))),
+			         True, True)
+		self.say('Total hashrate for device: %sH/s / %sH/s / %sH/s' % (
 		         formatNumber(pow(2,32)*sum(self.accepted)/(secs*1000)),
-		         formatNumber(pow(2,32)*total_nonces/(secs*1000))),
+		         formatNumber(pow(2,32)*total_nonces/(secs*1000)),
+				 formatNumber(pow(2,32)*(total_nonces+total_invalids)/(secs*1000))),
 		         True, True)
 	  
 	def updateStatus(self, force=False):
