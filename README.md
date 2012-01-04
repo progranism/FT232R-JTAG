@@ -1,5 +1,5 @@
 # README
-x6500-miner is a set of code designed for working with the X6500 FPGA Miner boards, which are used for bitcoin mining.
+x6500-miner is a set of code designed for working with the X6500 FPGA Miner boards, which are used for bitcoin mining. Portions of the code are borrowed or inspired by poclbm and phoenix-miner, and some direct contribution has been made by m0mchil.
 
 ## Dependencies
 The main dependencies are python 2.7 and the PyUSB module created by Pablo Bleyer. PyUSB is available as source or an installer for Windows from: http://bleyer.org/pyusb.
