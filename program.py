@@ -27,6 +27,9 @@ import time
 from optparse import OptionParser
 from ConsoleLogger import ConsoleLogger
 
+class DeviceNotOpened(Exception): pass
+class NoAvailableDevices(Exception): pass
+
 # Option parsing:
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] <path-to-bitstream-file>")
 parser.add_option("-d", "--devicenum", type="int", dest="devicenum", default=None,
@@ -137,10 +140,10 @@ with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
 	try:
 		ft232r.open(settings.devicenum, portlist)
-	except ft232r.NoAvailableDevices:
+	except NoAvailableDevices:
 		logger.log("ERROR: No available devices!")
 		exit()
-	except ft232r.DeviceNotOpened:
+	except DeviceNotOpened:
 		logger.log("ERROR: Device not opened!")
 		exit()
 	
@@ -193,7 +196,7 @@ with FT232R() as ft232r:
 	else:
 		logger.log("Pre-processing bitstream for chain = %d..." % settings.chain, False)
 		start_time = time.time()
-		processed_bitstream = BitFile.pre_process(bitfile.bitstream, jtag, settings.chain)
+		processed_bitstream = BitFile.pre_process(bitfile.bitstream, jtag, settings.chain, logger.updateProgress)
 		logger.log("Pre-processed bitstream in %f seconds" % (time.time() - start_time), False)
 		logger.log("Saving pre-processed bitstream...", False)
 		start_time = time.time()

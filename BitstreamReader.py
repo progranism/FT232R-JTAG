@@ -38,6 +38,7 @@
 
 import os.path
 import cPickle as pickle
+import time
 
 # Dictionary for looking up idcodes from device names:
 idcode_lut = {'6slx150fgg484': 0x401d093, '6slx45csg324': 0x4008093}
@@ -96,10 +97,15 @@ class BitFile:
 			return bitfile
 	
 	@staticmethod
-	def pre_process(bitstream, jtag, chain):
+	def pre_process(bitstream, jtag, chain, progressCallback=None):
 		CHUNK_SIZE = 4096*4
 		chunk = ""
 		chunks = []
+		
+		bytetotal = len(bitstream)
+		start_time = time.time()
+		last_update = 0
+		written = 0
 
 		for b in bitstream[:-1]:
 			d = ord(b)
@@ -111,6 +117,11 @@ class BitFile:
 				if len(chunk) >= CHUNK_SIZE:
 					chunks.append(chunk)
 					chunk = ""
+			
+			written += 1
+			if time.time() > (last_update + 1) and progressCallback:
+				progressCallback(start_time, time.time(), written, bytetotal)
+				last_update = time.time()
 		
 		if len(chunk) > 0:
 			chunks.append(chunk)
@@ -119,6 +130,8 @@ class BitFile:
 		d = ord(bitstream[-1])
 		for i in range(7, -1, -1):
 			last_bits.append((d >> i) & 1)
+		
+		progressCallback(start_time, time.time(), bytetotal, bytetotal)
 
 		#for i in range(self.current_part):
 		#	last_bits.append(0)
