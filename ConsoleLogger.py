@@ -93,10 +93,11 @@ class ConsoleLogger(object):
 		self.start_time = time()
 		self.rate = []
 		self.last_rate_update = time()
-		self.accepted = [0, 0]
-		self.rejected = [0, 0]
-		self.invalid = [0, 0]
-		self.recent_shares = 0
+		self.nonce_count = [0, 0]
+		self.valid_count = [0, 0]
+		self.accepted_count = [0, 0]
+		self.rejected_count = [0, 0]
+		self.recent_nonces = 0
 		self.sparkline = ''
 		self.lineLength = 0
 		self.connectionType = None
@@ -109,19 +110,19 @@ class ConsoleLogger(object):
 	def getRate(self):
 		if time() > self.last_rate_update + self.SPARKLINE_BINSIZE * 60:
 			recent_secs = time() - self.last_rate_update
-			recent_rate = self.recent_shares * pow(2, 32) / recent_secs
+			recent_rate = self.recent_nonces * pow(2, 32) / recent_secs
 			if len(self.rate) < self.SPARKLINE_LENGTH:
 				 self.rate.append(recent_rate)
 			else:
 				 self.rate.pop(0)
 				 self.rate.append(recent_rate)
-			self.recent_shares = 0
+			self.recent_nonces = 0
 			#self.sparkline = self.makeSparkline()
 			self.last_rate_update = time()
 
 		secs = time() - self.last_rate_update
 		if secs > 0:
-			current_rate = self.recent_shares * pow(2, 32) / secs
+			current_rate = self.recent_nonces * pow(2, 32) / secs
 		else:
 			current_rate = 0
 		current_rate += sum(self.rate)
@@ -154,15 +155,18 @@ class ConsoleLogger(object):
 
 	def reportBlock(self, block):
 		self.log('Currently on block: ' + str(block))
+	
+	def reportNonce(self, chain):
+		self.nonce_count[chain] += 1
+		self.recent_nonces += 1
+		self.reportDebug('(FPGA%d) Golden nonce found' % chain)
 	  
-	def reportFound(self, hash, accepted, chain=0):
+	def reportFound(self, hash, accepted, chain):
 		if accepted is not None and accepted == True:
-			self.accepted[chain] += 1
+			self.accepted_count[chain] += 1
 		else:
-			self.rejected[chain] += 1
+			self.rejected_count[chain] += 1
 			accepted = False
-			
-		self.recent_shares += 1
 
 		if self.verbose:
 			self.log('(FPGA%d) %s %s' % (chain, 'accepted' if accepted else 'rejected', 
@@ -171,8 +175,10 @@ class ConsoleLogger(object):
 			self.log('%s %s' % ('accepted' if accepted else 'rejected', 
 				 hash))
 	
-	def reportError(self, hash, chain=0):
-		self.invalid[chain] += 1
+	def reportValid(self, chain):
+		self.valid_count[chain] += 1
+	
+	def reportError(self, hash, chain):
 		if self.verbose:
 			self.log('(FPGA%d) %s invalid!!' % (chain, hash))
 		else:
@@ -212,32 +218,44 @@ class ConsoleLogger(object):
 			secs = 1
 		self.say('Getwork interval: %d secs' % settings.getwork_interval, True, True)
 		total_nonces = 0
-		total_invalids = 0
+		total_valids = 0
+		total_accepted = 0
 		for chain in self.chain_list:
-			acc = self.accepted[chain]
-			rej = self.rejected[chain]
-			inv = self.invalid[chain]
-			total = acc + rej
-			total_nonces += total
-			total_invalids += inv
-			self.say('Chain %d:' % chain, True, True)
-			self.say('  Accepted: %d' % acc, True, True)
-			if total > 0:
-				self.say('  Rejected: %d (%.2f%%)' % (rej, 100. * rej / total), True, True)
-				self.say('  Invalid: %d (%.2f%%)' % (inv, 100. * inv / (inv+total)), True, True)
-			else:
-				self.say('  Rejected: %d' % rej, True, True)
-				self.say('  Invalid: %d' % inv, True, True)
-			self.say('  Accepted hashrate: %sH/s' % (formatNumber(pow(2,32)*acc/(secs*1000))),
+			nonces = self.nonce_count[chain]
+			valids = self.valid_count[chain]
+			invalids = nonces - valids
+			accepted = self.accepted_count[chain]
+			rejected = self.rejected_count[chain]
+			
+			try:
+				rejected_pct = 100. * rejected / (rejected+accepted)
+			except ZeroDivisionError:
+				rejected_pct = 0
+			
+			try:
+				invalid_pct = 100. * invalids / nonces
+			except ZeroDivisionError:
+				invalid_pct = 0
+			
+			total_nonces += nonces
+			total_valids += valids
+			total_accepted += accepted
+			
+			self.say('FPGA %d:' % chain, True, True)
+			self.say('  Accepted: %d' % accepted, True, True)
+			self.say('  Rejected: %d (%.2f%%)' % (rejected, rejected_pct), True, True)
+			self.say('  Invalid: %d (%.2f%%)' % (invalids, invalid_pct), True, True)
+			
+			self.say('  Hashrate (all nonces): %sH/s' % (formatNumber(pow(2,32)*nonces/(secs*1000))),
 			         True, True)
-			self.say('  Hashrate w/ rejects: %sH/s' % (formatNumber(pow(2,32)*total/(secs*1000))),
+			self.say('  Hashrate (valid nonces): %sH/s' % (formatNumber(pow(2,32)*valids/(secs*1000))),
 			         True, True)
-			self.say('  Hashrate w/ invalids: %sH/s' % (formatNumber(pow(2,32)*(total+inv)/(secs*1000))),
+			self.say('  Hashrate (accepted shares): %sH/s' % (formatNumber(pow(2,32)*accepted/(secs*1000))),
 			         True, True)
 		self.say('Total hashrate for device: %sH/s / %sH/s / %sH/s' % (
-		         formatNumber(pow(2,32)*sum(self.accepted)/(secs*1000)),
 		         formatNumber(pow(2,32)*total_nonces/(secs*1000)),
-				 formatNumber(pow(2,32)*(total_nonces+total_invalids)/(secs*1000))),
+		         formatNumber(pow(2,32)*total_valids/(secs*1000)),
+				 formatNumber(pow(2,32)*total_accepted/(secs*1000))),
 		         True, True)
 	  
 	def updateStatus(self, force=False):
@@ -247,21 +265,23 @@ class ConsoleLogger(object):
 			status = '%sH/s' % formatNumber(self.getRate()/1000)
 			if self.verbose:
 				for chain in self.chain_list:
-					acc = self.accepted[chain]
-					rej = self.rejected[chain]
-					inv = self.invalid[chain]
+					acc = self.accepted_count[chain]
+					rej = self.rejected_count[chain]
+					tot = self.nonce_count[chain]
+					inv = tot - self.valid_count[chain]
 					if (acc+rej) > 0:
-						status += ' | %d: %d/%d/%d %.1f%%' % (chain, acc, rej, inv, 100.*rej/(acc+rej))
+						status += ' | %d: %d/%d/%d %.1f%%/%.1f%%' % (chain, acc, rej, inv, 100.*rej/(acc+rej), 100.*inv/tot)
 					else:
 						status += ' | %d: %d/%d/%d' % (chain, acc, rej, inv)
 				status += ' | ' + formatTime(time()-self.start_time)
 				status += ' | ' + self.serial
 			else:
-				acc = sum(self.accepted)
-				rej = sum(self.rejected)
-				inv = sum(self.invalid)
+				acc = sum(self.accepted_count)
+				rej = sum(self.rejected_count)
+				tot = sum(self.nonce_count)
+				inv = tot - sum(self.valid_count)
 				if (acc+rej) > 0:
-					status += ' | %d/%d/%d %.2f%%' % (acc, rej, inv, 100.*rej/(acc+rej))
+					status += ' | %d/%d/%d %.2f%%/%.2f%%' % (acc, rej, inv, 100.*rej/(acc+rej), 100.*inv/tot)
 				else:
 					status += ' | %d/%d/%d' % (acc, rej, inv)
 				#status += ' ' + self.sparkline

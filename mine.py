@@ -83,19 +83,32 @@ def bits2int(bits):
 	
 	return x
 	
-# This function is borrowed from phoenix-miner:
-def checkHash(gold):
-	staticDataUnpacked = unpack('<' + 'I'*19, gold.job.data.decode('hex')[:76])
-	staticData = pack('>' + 'I'*19, *staticDataUnpacked)
-	hashInput = pack('>76sI', staticData, gold.nonce)
-	hashOutput = sha256(sha256(hashInput).digest()).digest()
-	
-	for t,h in zip(gold.job.target.decode('hex')[::-1], hashOutput[::-1]):
+def checkTarget(target, hashOutput):
+	for t,h in zip(target[::-1], hashOutput[::-1]):
 		if ord(t) > ord(h):
 			return True
 		elif ord(t) < ord(h):
 			return False
 	return True
+
+def checkNonce(gold):
+	staticDataUnpacked = unpack('<' + 'I'*19, gold.job.data.decode('hex')[:76])
+	staticData = pack('>' + 'I'*19, *staticDataUnpacked)
+	hashInput = pack('>76sI', staticData, gold.nonce)
+	hashOutput = sha256(sha256(hashInput).digest()).digest()
+	
+	base_target = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000'
+	
+	if checkTarget(base_target.decode('hex'), hashOutput):
+		logger.reportValid(gold.chain)
+	else:
+		logger.reportError(hex(gold.nonce)[2:], gold.chain)
+		return False
+	
+	if checkTarget(gold.job.target.decode('hex'), hashOutput):
+		return True
+	
+	return False
 	
 def fpgaReadByte(jtag):
 	bits = int2bits(0, 13)
@@ -232,13 +245,12 @@ def mineloop(chain):
 			finally:
 				ft232r_lock.release()
 			if nonce is not None:
-				logger.reportDebug("(FPGA%d) Golden nonce found" % chain)
+				logger.reportNonce(chain)
 				gold = Object()
+				gold.chain = chain
 				gold.job = current_job
-				gold.nonce = nonce
-				if checkHash(gold) is False:
-					logger.reportError(hex(gold.nonce)[2:], chain)
-				else:
+				gold.nonce = nonce & 0xFFFFFFFF
+				if checkNonce(gold):
 					try:
 						goldqueue[chain].put(gold, block=True, timeout=10)
 						#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
@@ -256,13 +268,12 @@ def mineloop(chain):
 				ft232r_lock.release()
 			
 			if nonce is not None:
-				logger.reportDebug("(FPGA%d) Golden nonce found" % chain)
+				logger.reportNonce(chain)
 				gold = Object()
+				gold.chain = chain
 				gold.job = current_job
 				gold.nonce = nonce & 0xFFFFFFFF
-				if checkHash(gold) is False:
-					logger.reportError(hex(gold.nonce)[2:], chain)
-				else:
+				if checkNonce(gold):
 					try:
 						goldqueue[chain].put(gold, block=True, timeout=10)
 						#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
@@ -356,6 +367,7 @@ try:
 					minethread[chain] = Thread(target=mineloop, args=(chain,))
 					minethread[chain].daemon = True
 					minethread[chain].start()
+
 except KeyboardInterrupt:
 	logger.log("Exiting...")
 	logger.printSummary(settings)
