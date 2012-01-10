@@ -28,7 +28,7 @@ import time
 from optparse import OptionParser
 import traceback
 from threading import Thread, Lock
-from Queue import Queue, Empty
+from Queue import Queue, Empty, Full
 from struct import pack, unpack
 from hashlib import sha256
 
@@ -128,32 +128,39 @@ def fpgaReadNonce(jtag):
 	while True:
 		byte = fpgaReadByte(jtag)
 
+		# check data valid bit:
 		if byte < 0x1000:
 			jtag.tap.reset()
 			return None
 		
 		#logger.reportDebug("(FPGA%d) Read: %04x" % (jtag.chain, byte))
 		
+		# check byte counter:
 		if (byte & 0xF00) == 0xF00:
 			break
 	
 	# We now have the first byte
 	nonce = byte & 0xFF
 	count = 1
-	timeout = 0
 	#logger.reportDebug("(FPGA%d) Potential nonce, reading the rest..." % jtag.chain)
 	while True:
 		byte = fpgaReadByte(jtag)
-
+		
 		#logger.reportDebug("(FPGA%d) Read: %04x" % (jtag.chain, byte))
 		
+		# check data valid bit:
 		if byte < 0x1000:
 			jtag.tap.reset()
 			return None
-
+		
+		# check byte counter:
+		if (byte & 0xF00) >> 8 != (0xF >> count):
+			jtag.tap.reset()
+			return None
+		
 		nonce |= (byte & 0xFF) << (count * 8)
 		count += 1
-
+		
 		if (byte & 0xF00) == 0x100:
 			break
 
@@ -217,13 +224,26 @@ def fpgaWriteJob(jtag, job):
 	
 	#logger.reportDebug("(FPGA%d) Job data loaded in %.3f seconds" % (jtag.chain, (time.time() - start_time)))
 	logger.reportDebug("(FPGA%d) Job data loaded" % jtag.chain)
+	
+def handleNonce(job, nonce, chain):
+	logger.reportNonce(chain)
+	gold = Object()
+	gold.chain = chain
+	gold.job = job
+	gold.nonce = nonce & 0xFFFFFFFF
+	if checkNonce(gold):
+		try:
+			goldqueue[chain].put(gold, block=True, timeout=10)
+			#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
+		except Full:
+			logger.log("(FPGA%d) Queue full! Lost a share!" % chain)
 
 def mineloop(chain):
 	current_job = None
+	job = None
 	
 	while True:
 		time.sleep(0.1)
-		job = None
 		nonce = None
 		
 		try:
@@ -245,18 +265,7 @@ def mineloop(chain):
 			finally:
 				ft232r_lock.release()
 			if nonce is not None:
-				logger.reportNonce(chain)
-				gold = Object()
-				gold.chain = chain
-				gold.job = current_job
-				gold.nonce = nonce & 0xFFFFFFFF
-				if checkNonce(gold):
-					try:
-						goldqueue[chain].put(gold, block=True, timeout=10)
-						#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
-					except Full:
-						logger.log("(FPGA%d) Queue full! Lost a share!" % chain)
-					
+				handleNonce(current_job, nonce, chain)
 			current_job = job
 		
 		if current_job is not None:
@@ -268,17 +277,7 @@ def mineloop(chain):
 				ft232r_lock.release()
 			
 			if nonce is not None:
-				logger.reportNonce(chain)
-				gold = Object()
-				gold.chain = chain
-				gold.job = current_job
-				gold.nonce = nonce & 0xFFFFFFFF
-				if checkNonce(gold):
-					try:
-						goldqueue[chain].put(gold, block=True, timeout=10)
-						#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
-					except Full:
-						logger.log("(FPGA%d) Queue full! Lost a share!" % chain)
+				handleNonce(current_job, nonce, chain)
 
 
 if settings.url is None:
