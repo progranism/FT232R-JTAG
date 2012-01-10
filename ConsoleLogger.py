@@ -289,9 +289,18 @@ class ConsoleLogger(object):
 			self.lastUpdate = time()
 	
 	def updateProgress(self, start_time, now_time, written, total):
-		percent_complete = 100. * written / total
-		speed = written / (1000 * (now_time - start_time))
-		remaining_sec = 100 * (now_time - start_time) / percent_complete
+		try:
+			percent_complete = 100. * written / total
+		except ZeroDivisionError:
+			percent_complete = 0
+		try:
+			speed = written / (1000 * (now_time - start_time))
+		except ZeroDivisionError:
+			speed = 0
+		try:
+			remaining_sec = 100 * (now_time - start_time) / percent_complete
+		except ZeroDivisionError:
+			remaining_sec = 0
 		remaining_sec -= now_time - start_time
 		if remaining_sec < 60:
 			remaining = "%ds" % remaining_sec
