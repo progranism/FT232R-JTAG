@@ -95,6 +95,7 @@ class ConsoleLogger(object):
 		self.last_rate_update = time()
 		self.nonce_count = [0, 0]
 		self.valid_count = [0, 0]
+		self.invalid_count = [0, 0]
 		self.accepted_count = [0, 0]
 		self.rejected_count = [0, 0]
 		self.recent_nonces = 0
@@ -158,7 +159,6 @@ class ConsoleLogger(object):
 	
 	def reportNonce(self, chain):
 		self.nonce_count[chain] += 1
-		self.recent_nonces += 1
 		self.reportDebug('(FPGA%d) Golden nonce found' % chain)
 	  
 	def reportFound(self, hash, accepted, chain):
@@ -177,8 +177,10 @@ class ConsoleLogger(object):
 	
 	def reportValid(self, chain):
 		self.valid_count[chain] += 1
+		self.recent_nonces += 1
 	
 	def reportError(self, hash, chain):
+		self.invalid_count[chain] += 1
 		if self.verbose:
 			self.log('(FPGA%d) %s invalid!!' % (chain, hash))
 		else:
@@ -223,7 +225,7 @@ class ConsoleLogger(object):
 		for chain in self.chain_list:
 			nonces = self.nonce_count[chain]
 			valids = self.valid_count[chain]
-			invalids = nonces - valids
+			invalids = self.invalid_count[chain]
 			accepted = self.accepted_count[chain]
 			rejected = self.rejected_count[chain]
 			
@@ -268,22 +270,32 @@ class ConsoleLogger(object):
 					acc = self.accepted_count[chain]
 					rej = self.rejected_count[chain]
 					tot = self.nonce_count[chain]
-					inv = tot - self.valid_count[chain]
-					if (acc+rej) > 0:
-						status += ' | %d: %d/%d/%d %.1f%%/%.1f%%' % (chain, acc, rej, inv, 100.*rej/(acc+rej), 100.*inv/tot)
-					else:
-						status += ' | %d: %d/%d/%d' % (chain, acc, rej, inv)
+					inv = self.invalid_count[chain]
+					try:
+						rej_pct = 100.*rej/(acc+rej)
+					except ZeroDivisionError:
+						rej_pct = 0
+					try:
+						inv_pct = 100.*inv/tot
+					except ZeroDivisionError:
+						inv_pct = 0
+					status += ' | %d: %d/%d/%d %.1f%%/%.1f%%' % (chain, acc, rej, inv, rej_pct, inv_pct)
 				status += ' | ' + formatTime(time()-self.start_time)
 				status += ' | ' + self.serial
 			else:
 				acc = sum(self.accepted_count)
 				rej = sum(self.rejected_count)
 				tot = sum(self.nonce_count)
-				inv = tot - sum(self.valid_count)
-				if (acc+rej) > 0:
-					status += ' | %d/%d/%d %.2f%%/%.2f%%' % (acc, rej, inv, 100.*rej/(acc+rej), 100.*inv/tot)
-				else:
-					status += ' | %d/%d/%d' % (acc, rej, inv)
+				inv = sum(self.invalid_count)
+				try:
+					rej_pct = 100.*rej/(acc+rej)
+				except ZeroDivisionError:
+					rej_pct = 0
+				try:
+					inv_pct = 100.*inv/tot
+				except ZeroDivisionError:
+					inv_pct = 0
+				status += ' | %d/%d/%d %.2f%%/%.2f%%' % (acc, rej, inv, rej_pct, inv_pct)
 				#status += ' ' + self.sparkline
 			self.say(status)
 			self.lastUpdate = time()

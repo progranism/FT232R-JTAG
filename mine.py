@@ -181,10 +181,10 @@ def fpgaClearQueue(jtag):
 	while True:
 		if fpgaReadByte(jtag) < 0x1000:
 			break
-	
+		logger.reportDebug("(FPGA%d) Cleared an old nonce" % jtag.chain)
 	jtag.tap.reset()
 	
-	logger.reportDebug("(FPGA%d) Queue cleared." % jtag.chain)
+	logger.reportDebug("(FPGA%d) Queue cleared" % jtag.chain)
 
 def fpgaWriteJob(jtag, job):
 	# We need the 256-bit midstate, and 12 bytes from data.
