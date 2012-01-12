@@ -245,7 +245,7 @@ class FT232R:
 			
 			while self.handle.getQueueStatus() < wrote:
 				# TODO: Add a timeout
-				time.sleep(1)
+				time.sleep(0.1)
 				#self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
 			
 			data.extend(self.handle.read(wrote))

@@ -181,7 +181,6 @@ def fpgaClearQueue(jtag):
 	while True:
 		if fpgaReadByte(jtag) < 0x1000:
 			break
-		logger.reportDebug("(FPGA%d) Cleared an old nonce" % jtag.chain)
 	jtag.tap.reset()
 	
 	logger.reportDebug("(FPGA%d) Queue cleared" % jtag.chain)
@@ -243,7 +242,7 @@ def mineloop(chain):
 	job = None
 	
 	while True:
-		time.sleep(0.1)
+		time.sleep(0.2)
 		nonce = None
 		
 		try:
