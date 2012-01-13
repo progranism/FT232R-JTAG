@@ -1,5 +1,9 @@
 #!/usr/bin/python
 
+import os
+
+os.system('rmmod ftdi_sio')
+
 import d2xx
 
 devices = d2xx.listDevices()
