@@ -230,53 +230,21 @@ def handleNonce(job, nonce, chain):
 	gold.chain = chain
 	gold.job = job
 	gold.nonce = nonce & 0xFFFFFFFF
-	if checkNonce(gold):
-		try:
-			goldqueue[chain].put(gold, block=True, timeout=10)
-			#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
-		except Full:
-			logger.log("(FPGA%d) Queue full! Lost a share!" % chain)
-
-def mineloop(chain):
-	current_job = None
-	job = None
-	
+	try:
+		noncequeue.put(gold, block=True, timeout=10)
+	except Full:
+		logger.log("(FPGA%d) Queue full! Lost a nonce!" % chain)
+		
+def nonceLoop():
 	while True:
-		time.sleep(0.2)
-		nonce = None
-		
-		try:
-			#logger.reportDebug("(FPGA%d) Checking for new job..." % chain)
-			job = jobqueue[chain].get(False)
-		except Empty:
-			job = None
-		
-		if job is not None:
-			#logger.reportDebug("(FPGA%d) Loading new job..." % chain)
-			try:
-				ft232r_lock.acquire()
-				if current_job is not None:
-					#logger.reportDebug("(FPGA%d) Checking for nonce*..." % chain)
-					nonce = fpgaReadNonce(jtag[chain])
-				#logger.reportDebug("(FPGA%d) Writing job..." % chain)
-				fpgaWriteJob(jtag[chain], job)
-				#fpgaClearQueue(jtag[chain])
-			finally:
-				ft232r_lock.release()
-			if nonce is not None:
-				handleNonce(current_job, nonce, chain)
-			current_job = job
-		
-		if current_job is not None:
-			#logger.reportDebug("(FPGA%d) Checking for nonce..." % chain)
-			try:
-				ft232r_lock.acquire()
-				nonce = fpgaReadNonce(jtag[chain])
-			finally:
-				ft232r_lock.release()
+		gold = noncequeue.get(block=True)
 			
-			if nonce is not None:
-				handleNonce(current_job, nonce, chain)
+		if checkNonce(gold):
+			try:
+				goldqueue.put(gold, block=True, timeout=10)
+				#logger.reportDebug("(FPGA%d) goldqueue loaded (%d)" % (chain, goldqueue[chain].qsize()))
+			except Full:
+				logger.log("(FPGA%d) Queue full! Lost a valid nonce!" % gold.chain)
 
 
 if settings.url is None:
@@ -288,9 +256,8 @@ if settings.worker is None:
 	parser.print_usage()
 	exit()
 
-		
 jobqueue = [None]*2
-goldqueue = [None]*2
+goldqueue = Queue()
 
 logger = ConsoleLogger(settings.chain, settings.verbose)
 rpcclient = RPCClient(settings, logger, jobqueue, goldqueue)
@@ -332,39 +299,52 @@ try:
 		
 		logger.log("Connected to %d FPGAs" % fpga_num, False)
 		
-		ft232r_lock = Lock()
-		
 		for chain in chain_list:
-			try:
-				ft232r_lock.acquire()
-				fpgaClearQueue(jtag[chain])
-			finally:
-				ft232r_lock.release()
+			fpgaClearQueue(jtag[chain])
 		
 		logger.start()
 		
 		rpcclient.start()
 		
-		minethread = [None, None]
 		for chain in chain_list:
 			jobqueue[chain] = Queue(maxsize=1) # store at most one job
-			goldqueue[chain] = Queue() # store as many nonces as you can
-			
-			# Start mining thread(s)
-			minethread[chain] = Thread(target=mineloop, args=(chain,))
-			minethread[chain].daemon = True
-			minethread[chain].start()
 		
+		noncequeue = Queue()
+		nonceThread = Thread(target=nonceLoop)
+		nonceThread.daemon = True
+		nonceThread.start()
+
+		current_job = [None]*2
+		job = None
 		while True:
-			time.sleep(1)
+			time.sleep(0.2)
 			logger.updateStatus()
-			# TODO: implement a watchdog for the getwork thread
+			
 			for chain in chain_list:
-				if minethread[chain] is None or not minethread[chain].isAlive():
-					logger.log("Restarting minethread for chain %d" % chain)
-					minethread[chain] = Thread(target=mineloop, args=(chain,))
-					minethread[chain].daemon = True
-					minethread[chain].start()
+				nonce = None
+				try:
+					#logger.reportDebug("(FPGA%d) Checking for new job..." % chain)
+					job = jobqueue[chain].get(False)
+				except Empty:
+					job = None
+				
+				if job is not None:
+					#logger.reportDebug("(FPGA%d) Loading new job..." % chain)
+					if current_job[chain] is not None:
+						#logger.reportDebug("(FPGA%d) Checking for nonce*..." % chain)
+						nonce = fpgaReadNonce(jtag[chain])
+					#logger.reportDebug("(FPGA%d) Writing job..." % chain)
+					fpgaWriteJob(jtag[chain], job)
+					#fpgaClearQueue(jtag[chain])
+					if nonce is not None:
+						handleNonce(current_job[chain], nonce, chain)
+					current_job[chain] = job
+				
+				if current_job[chain] is not None:
+					#logger.reportDebug("(FPGA%d) Checking for nonce..." % chain)
+					nonce = fpgaReadNonce(jtag[chain])
+					if nonce is not None:
+						handleNonce(current_job[chain], nonce, chain)
 
 except KeyboardInterrupt:
 	logger.log("Exiting...")

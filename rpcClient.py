@@ -163,7 +163,7 @@ class RPCClient:
 			job.data = work['data']
 			job.target = work['target']
 			self.jobqueue[chain].put(job)
-			#logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, jobqueue[chain].qsize()))
+			#self.logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, self.jobqueue[chain].qsize()))
 			self.last_job[chain] = time.time()
 			return True
 		except:
@@ -171,28 +171,29 @@ class RPCClient:
 			self.last_job[chain] = None
 			return False
 
-	def sendGold(self, gold, chain):
+	def sendGold(self, gold):
 		#hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 		hexnonce = pack('I', long(gold.nonce)).encode('hex') # suggested by m0mchil
 		data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 		
-		(self.connection, accepted) = self.getwork(self.connection, chain, data)
+		(self.connection, accepted) = self.getwork(self.connection, gold.chain, data)
 		if self.connection is None:
 			return False
 		
-		self.logger.reportFound(hex(gold.nonce)[2:], accepted, chain)
+		self.logger.reportFound(hex(gold.nonce)[2:], accepted, gold.chain)
 		return True
 		
 	def queue_work(self, work):
+		# Empty the gold queue:
+		while True:
+			try:
+				self.goldqueue.get(False)
+			except Empty:
+				break
 		for chain in self.chain_list:
 			# Empty the job queue:
 			try:
 				self.jobqueue[chain].get(False)
-			except Empty:
-				pass
-			# Empty the gold queue:
-			try:
-				self.goldqueue[chain].get(False)
 			except Empty:
 				pass
 			# Load new jobs:
@@ -215,22 +216,21 @@ class RPCClient:
 				if self.last_job[chain] is None or (time.time() - self.last_job[chain]) > self.getwork_interval:
 					self.getNewJob(chain)
 			
-			for chain in self.chain_list:
+			gold = None
+			try:
+				gold = self.goldqueue.get(False)
+			except Empty:
 				gold = None
-				try:
-					gold = self.goldqueue[chain].get(False)
-				except Empty:
-					gold = None
 
-				if gold is not None:
-					retries_left = self.NUM_RETRIES
-					success = self.sendGold(gold, chain)
-					while not success and retries_left > 0:
-						self.logger.reportDebug("(FPGA%d) Error sending nonce! Retrying..." % chain)
-						success = self.sendGold(gold, chain)
-						retries_left -= 1
-					if not success:
-						self.logger.reportFound(hex(gold.nonce)[2:], False, chain)
+			if gold is not None:
+				retries_left = self.NUM_RETRIES
+				success = self.sendGold(gold)
+				while not success and retries_left > 0:
+					self.logger.reportDebug("(FPGA%d) Error sending nonce! Retrying..." % gold.chain)
+					success = self.sendGold(gold)
+					retries_left -= 1
+				if not success:
+					self.logger.reportFound(hex(gold.nonce)[2:], False, gold.chain)
 	
 	def longpoll_loop(self):
 		last_host = None
