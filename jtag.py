@@ -46,7 +46,7 @@ irlength_lut = {0x403d093: 6, 0x401d093: 6, 0x4008093: 6, 0x5057093: 16, 0x50590
 name_lut = {0x403d093: 'Spartan 6 LX150T', 0x401d093: 'Spartan 6 LX150'}
 
 class JTAG():
-	def __init__(self, ft232r, portlist, chain):
+	def __init__(self, ft232r, chain):
 		self.ft232r = ft232r
 		self.chain = chain
 		self.deviceCount = None
@@ -55,7 +55,7 @@ class JTAG():
 		self.current_instructions = [1] * 100	# Default is to put all possible devices into BYPASS. # TODO: Should be 1000
 		self.current_part = 0
 		self._tckcount = 0
-		self.portlist = portlist
+		self.portlist = ft232r.portlist.chain_portlist(chain)
 		self.debug = 0
 		
 		self.tap = TAP(self.jtagClock)

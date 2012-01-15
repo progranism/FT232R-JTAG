@@ -76,6 +76,8 @@ class FT232R_PortList:
 			return JTAG_PortList(self.tck0, self.tms0, self.tdi0, self.tdo0)
 		elif chain == 1:
 			return JTAG_PortList(self.tck1, self.tms1, self.tdi1, self.tdo1)
+		elif chain == 2:
+			return self
 		else:
 			raise InvalidChain()
 

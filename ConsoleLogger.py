@@ -80,25 +80,15 @@ class ConsoleLogger(object):
 	SPARKLINE_LENGTH = 30 # number of bins to display of the sparkline
 	SPARKLINE_BINSIZE = 6 # number of mins for each bin of the sparkline
 
-	def __init__(self, chain=0, verbose=False): 
-		self.chain = chain
-		if chain == 2:
-			self.chain_list = [0, 1]
-		elif chain >= 0 and chain < 2:
-			self.chain_list = [chain]
-		else:
-			Exception('Invalid chain option (%d)!' % chain)
+	def __init__(self, verbose=False): 
+		self.fpga_list = []
 		self.verbose = verbose
 		self.lastUpdate = time() - 1
 		self.start_time = time()
 		self.rate = []
 		self.last_rate_update = time()
-		self.nonce_count = [0, 0]
-		self.valid_count = [0, 0]
-		self.invalid_count = [0, 0]
-		self.accepted_count = [0, 0]
-		self.rejected_count = [0, 0]
-		self.recent_nonces = 0
+		self.recent_valids = 0
+		self.total_valids = 0
 		self.sparkline = ''
 		self.lineLength = 0
 		self.connectionType = None
@@ -107,23 +97,29 @@ class ConsoleLogger(object):
 
 	def start(self):
 		self.start_time = time()
+		self.last_rate_update = time()
 	
 	def getRate(self):
 		if time() > self.last_rate_update + self.SPARKLINE_BINSIZE * 60:
 			recent_secs = time() - self.last_rate_update
-			recent_rate = self.recent_nonces * pow(2, 32) / recent_secs
+			recent_rate = self.recent_valids * pow(2, 32) / recent_secs
 			if len(self.rate) < self.SPARKLINE_LENGTH:
 				 self.rate.append(recent_rate)
 			else:
 				 self.rate.pop(0)
 				 self.rate.append(recent_rate)
-			self.recent_nonces = 0
+			self.recent_valids = 0
 			#self.sparkline = self.makeSparkline()
 			self.last_rate_update = time()
 
 		secs = time() - self.last_rate_update
 		if secs > 0:
-			current_rate = self.recent_nonces * pow(2, 32) / secs
+			if self.recent_valids > 0 or self.total_valids == 0:
+					current_rate = self.recent_valids * pow(2, 32) / secs
+			else:
+				current_rate = pow(2, 32) / secs
+		elif len(self.rate) > 0:
+			current_rate = sum(self.rate) / len(self.rate)
 		else:
 			current_rate = 0
 		current_rate += sum(self.rate)
@@ -149,7 +145,7 @@ class ConsoleLogger(object):
 	def reportOpened(self, devicenum, serial):
 		self.devicenum = devicenum
 		self.serial = serial
-		self.log('Device %d opened (%s)' % (devicenum, serial))
+		self.log('Device %d opened (%s)' % (devicenum, serial), False)
 	  
 	def reportType(self, type):
 		self.connectionType = type
@@ -157,32 +153,33 @@ class ConsoleLogger(object):
 	def reportBlock(self, block):
 		self.log('Currently on block: ' + str(block))
 	
-	def reportNonce(self, chain):
-		self.nonce_count[chain] += 1
-		self.reportDebug('(FPGA%d) Golden nonce found' % chain)
+	def reportNonce(self, fpgaID):
+		self.fpga_list[fpgaID].nonce_count += 1
+		self.reportDebug('%d: Golden nonce found' % fpgaID)
 	  
-	def reportFound(self, hash, accepted, chain):
+	def reportFound(self, hash, accepted, fpgaID):
 		if accepted is not None and accepted == True:
-			self.accepted_count[chain] += 1
+			self.fpga_list[fpgaID].accepted_count += 1
 		else:
-			self.rejected_count[chain] += 1
+			self.fpga_list[fpgaID].rejected_count += 1
 			accepted = False
 
 		if self.verbose:
-			self.log('(FPGA%d) %s %s' % (chain, 'accepted' if accepted else 'rejected', 
+			self.log('%d: %s %s' % (fpgaID, 'accepted' if accepted else 'rejected', 
 				 hash))
 		else:
 			self.log('%s %s' % ('accepted' if accepted else 'rejected', 
 				 hash))
 	
-	def reportValid(self, chain):
-		self.valid_count[chain] += 1
-		self.recent_nonces += 1
+	def reportValid(self, fpgaID):
+		self.fpga_list[fpgaID].valid_count += 1
+		self.recent_valids += 1
+		self.total_valids += 1
 	
-	def reportError(self, hash, chain):
-		self.invalid_count[chain] += 1
+	def reportError(self, hash, fpgaID):
+		self.fpga_list[fpgaID].invalid_count += 1
 		if self.verbose:
-			self.log('(FPGA%d) %s invalid!!' % (chain, hash))
+			self.log('%d: %s invalid!!' % (fpgaID, hash))
 		else:
 			self.log('%s invalid!!' % hash)
 	
@@ -212,8 +209,7 @@ class ConsoleLogger(object):
 		self.say('-------------', True, True)
 		self.say('Device: %d' % self.devicenum, True, True)
 		self.say('Serial: %s' % self.serial, True, True)
-		self.say('JTAG chain: %d' % self.chain, True, True)
-		self.say('Number of FPGAs: %d' % len(self.chain_list), True, True)
+		self.say('Number of FPGAs: %d' % len(self.fpga_list), True, True)
 		secs = time() - self.start_time
 		self.say('Running time: %s' % formatTime(secs), True, True)
 		if secs <= 0:
@@ -222,12 +218,12 @@ class ConsoleLogger(object):
 		total_nonces = 0
 		total_valids = 0
 		total_accepted = 0
-		for chain in self.chain_list:
-			nonces = self.nonce_count[chain]
-			valids = self.valid_count[chain]
-			invalids = self.invalid_count[chain]
-			accepted = self.accepted_count[chain]
-			rejected = self.rejected_count[chain]
+		for fpga in self.fpga_list:
+			nonces = fpga.nonce_count
+			valids = fpga.valid_count
+			invalids = fpga.invalid_count
+			accepted = fpga.accepted_count
+			rejected = fpga.rejected_count
 			
 			try:
 				rejected_pct = 100. * rejected / (rejected+accepted)
@@ -243,7 +239,7 @@ class ConsoleLogger(object):
 			total_valids += valids
 			total_accepted += accepted
 			
-			self.say('FPGA %d:' % chain, True, True)
+			self.say('FPGA %d:' % fpga.id, True, True)
 			self.say('  Accepted: %d' % accepted, True, True)
 			self.say('  Rejected: %d (%.2f%%)' % (rejected, rejected_pct), True, True)
 			self.say('  Invalid: %d (%.2f%%)' % (invalids, invalid_pct), True, True)
@@ -254,6 +250,7 @@ class ConsoleLogger(object):
 			         True, True)
 			self.say('  Hashrate (accepted shares): %sH/s' % (formatNumber(pow(2,32)*accepted/(secs*1000))),
 			         True, True)
+		
 		self.say('Total hashrate for device: %sH/s / %sH/s / %sH/s' % (
 		         formatNumber(pow(2,32)*total_nonces/(secs*1000)),
 		         formatNumber(pow(2,32)*total_valids/(secs*1000)),
@@ -264,13 +261,13 @@ class ConsoleLogger(object):
 		#only update if last update was more than UPDATE_TIME seconds ago
 		dt = time() - self.lastUpdate
 		if force or dt > self.UPDATE_TIME:
-			status = '%sH/s' % formatNumber(self.getRate()/1000)
+			status = '%sH/s' % formatNumber(self.getRate()/1000) # TODO: Give some indication of the quality of the hashrate estimate (sig. figures?)
 			if self.verbose:
-				for chain in self.chain_list:
-					acc = self.accepted_count[chain]
-					rej = self.rejected_count[chain]
-					tot = self.nonce_count[chain]
-					inv = self.invalid_count[chain]
+				for fpga in self.fpga_list:
+					acc = fpga.accepted_count
+					rej = fpga.rejected_count
+					tot = fpga.nonce_count
+					inv = fpga.invalid_count
 					try:
 						rej_pct = 100.*rej/(acc+rej)
 					except ZeroDivisionError:
@@ -279,14 +276,14 @@ class ConsoleLogger(object):
 						inv_pct = 100.*inv/tot
 					except ZeroDivisionError:
 						inv_pct = 0
-					status += ' | %d: %d/%d/%d %.1f%%/%.1f%%' % (chain, acc, rej, inv, rej_pct, inv_pct)
+					status += ' | %d: %d/%d/%d %.1f%%/%.1f%%' % (fpga.id, acc, rej, inv, rej_pct, inv_pct)
 				status += ' | ' + formatTime(time()-self.start_time)
 				status += ' | ' + self.serial
 			else:
-				acc = sum(self.accepted_count)
-				rej = sum(self.rejected_count)
-				tot = sum(self.nonce_count)
-				inv = sum(self.invalid_count)
+				acc = sum([fpga.accepted_count for fpga in fpga_list])
+				rej = sum([fpga.accepted_count for fpga in fpga_list])
+				tot = sum([fpga.accepted_count for fpga in fpga_list])
+				inv = sum([fpga.accepted_count for fpga in fpga_list])
 				try:
 					rej_pct = 100.*rej/(acc+rej)
 				except ZeroDivisionError:
@@ -314,13 +311,7 @@ class ConsoleLogger(object):
 		except ZeroDivisionError:
 			remaining_sec = 0
 		remaining_sec -= now_time - start_time
-		if remaining_sec < 60:
-			remaining = "%ds" % remaining_sec
-		else:
-			remaining_min = int(remaining_sec / 60)
-			remaining_sec -= remaining_min * 60
-			remaining = "%dm%ds" % (remaining_min, remaining_sec)
-		status = "Completed: %.1f%% [%sB/s] [%s remaining]" % (percent_complete, formatNumber(speed), remaining)
+		status = "Completed: %.1f%% [%sB/s] [%s remaining]" % (percent_complete, formatNumber(speed), formatTime(remaining_sec))
 		self.say(status)
 	  
 	def say(self, message, newLine=False, hideTimestamp=False):

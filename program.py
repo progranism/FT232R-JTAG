@@ -111,7 +111,7 @@ def programBitstream(ft232r, jtag, chain, processed_bitstream):
 
 	ft232r.flush()
 
-logger = ConsoleLogger(settings.chain, settings.verbose)
+logger = ConsoleLogger(settings.verbose)
 
 if len(args) == 0:
 	logger.log("ERROR: No bitstream file specified!", False)
@@ -141,10 +141,10 @@ with FT232R() as ft232r:
 	try:
 		ft232r.open(settings.devicenum, portlist)
 	except NoAvailableDevices:
-		logger.log("ERROR: No available devices!")
+		logger.log("ERROR: No available devices!", False)
 		exit()
 	except DeviceNotOpened:
-		logger.log("ERROR: Device not opened!")
+		logger.log("ERROR: Device not opened!", False)
 		exit()
 	
 	logger.reportOpened(ft232r.devicenum, ft232r.serial)
@@ -161,7 +161,7 @@ with FT232R() as ft232r:
 	jtag = [None]*2
 	
 	for chain in chain_list:
-		jtag[chain] = JTAG(ft232r, portlist.chain_portlist(chain), chain)
+		jtag[chain] = JTAG(ft232r, chain)
 		logger.log("Discovering JTAG chain %d ..." % chain, False)
 		jtag[chain].detect()
 		
@@ -181,7 +181,7 @@ with FT232R() as ft232r:
 				raise BitFileMismatch
 	
 	if settings.chain == 2:
-		jtag = JTAG(ft232r, portlist, settings.chain)
+		jtag = JTAG(ft232r, settings.chain)
 		jtag.deviceCount = 1
 		jtag.idcodes = [bitfile.idcode]
 		jtag._processIdcodes()

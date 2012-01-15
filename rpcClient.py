@@ -48,13 +48,12 @@ class RPCClient:
 	
 	NUM_RETRIES = 5
 	
-	def __init__(self, settings, logger, jobqueue, goldqueue):
+	def __init__(self, settings, logger, goldqueue):
 		self.host = settings.url
 		self.getwork_interval = settings.getwork_interval
 		self.logger = logger
-		self.jobqueue = jobqueue
 		self.goldqueue = goldqueue
-		self.chain_list = []
+		self.fpga_list = []
 		self.proto = "http"
 		self.postdata = {'method': 'getwork', 'id': 'json'}
 		self.headers = {"User-Agent": 'x6500-miner',
@@ -82,9 +81,6 @@ class RPCClient:
 		self.longpoll_thread = Thread(target=self.longpoll_loop)
 		self.longpoll_thread.daemon = True
 		self.longpoll_thread.start()
-	
-	def set_chain_list(self, chain_list):
-		self.chain_list = chain_list
 
 	def connect(self, proto, host, timeout):
 		if proto == 'https': connector = httplib.HTTPSConnection
@@ -125,7 +121,7 @@ class RPCClient:
 		self.logger.log(msg)
 		exit()
 
-	def getwork(self, connection, chain, data=None):
+	def getwork(self, connection, fpgaID, data=None):
 		try:
 			if not connection:
 				self.logger.reportDebug("Connecting to server...")
@@ -134,14 +130,14 @@ class RPCClient:
 				#connection.set_debuglevel(1)
 			if data is None:
 				self.postdata['params']  = []
-				#self.logger.reportDebug("(FPGA%d) Requesting work..." % chain)
+				#self.logger.reportDebug("%d: Requesting work..." % fpgaID)
 			else:
 				self.postdata['params'] = [data]
-				#self.logger.reportDebug("(FPGA%d) Submitting nonce..." % chain)
+				#self.logger.reportDebug("%d: Submitting nonce..." % fpgaID)
 			(connection, result) = self.request(connection, '/', self.headers, dumps(self.postdata))
 			return (connection, result['result'])
 		except NotAuthorized:
-			failure('Wrong username or password.')
+			self.failure('Wrong username or password.')
 		except RPCError as e:
 			self.logger.reportDebug("RPCError! %s" % e)
 			return (connection, e)
@@ -154,21 +150,29 @@ class RPCClient:
 			pass
 		return (None, None)
 	
-	def getNewJob(self, chain, work=None):
-		if work is None:
-			(self.connection, work) = self.getwork(self.connection, chain)
+	def getNewJob(self, fpga, work=None):
 		try:
+			# Empty the job queue:
+			while True:
+				try:
+					fpga.jobqueue.get(False)
+				except Empty:
+					break
+			
+			if work is None:
+				(self.connection, work) = self.getwork(self.connection, fpga.id)
+			
 			job = Object()
 			job.midstate = work['midstate']
 			job.data = work['data']
 			job.target = work['target']
-			self.jobqueue[chain].put(job)
-			#self.logger.reportDebug("(FPGA%d) jobqueue loaded (%d)" % (chain, self.jobqueue[chain].qsize()))
-			self.last_job[chain] = time.time()
+			fpga.jobqueue.put(job)
+			#self.logger.reportDebug("%d: jobqueue loaded (%d)" % (chain, self.jobqueue[chain].qsize()))
+			fpga.last_job = time.time()
 			return True
 		except:
-			self.logger.log("(FPGA%d) Error getting work! Retrying..." % chain)
-			self.last_job[chain] = None
+			self.logger.log("%d: Error getting work! Retrying..." % fpga.id)
+			fpga.last_job = None
 			return False
 
 	def sendGold(self, gold):
@@ -176,11 +180,11 @@ class RPCClient:
 		hexnonce = pack('I', long(gold.nonce)).encode('hex') # suggested by m0mchil
 		data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 		
-		(self.connection, accepted) = self.getwork(self.connection, gold.chain, data)
+		(self.connection, accepted) = self.getwork(self.connection, gold.fpgaID, data)
 		if self.connection is None:
 			return False
 		
-		self.logger.reportFound(hex(gold.nonce)[2:], accepted, gold.chain)
+		self.logger.reportFound(hex(gold.nonce)[2:], accepted, gold.fpgaID)
 		return True
 		
 	def queue_work(self, work):
@@ -190,31 +194,25 @@ class RPCClient:
 				self.goldqueue.get(False)
 			except Empty:
 				break
-		for chain in self.chain_list:
-			# Empty the job queue:
-			try:
-				self.jobqueue[chain].get(False)
-			except Empty:
-				pass
-			# Load new jobs:
+		for fpga in self.fpga_list:
 			try:
 				# A long-poll event returns a new job, so load that one on the first chain:
-				self.getNewJob(chain, work)
+				self.getNewJob(fpga, work)
 				# Clear that job so that getNewJob will fetch a new one when called on subsequent chains:
 				work = None
 			except:
 				pass
 	
 	def getwork_loop(self):
-		for chain in self.chain_list:
-			self.getNewJob(chain)
+		for fpga in self.fpga_list:
+			self.getNewJob(fpga)
 		
 		while True:
 			time.sleep(0.1)
 			
-			for chain in self.chain_list:
-				if self.last_job[chain] is None or (time.time() - self.last_job[chain]) > self.getwork_interval:
-					self.getNewJob(chain)
+			for fpga in self.fpga_list:
+				if fpga.last_job is None or (time.time() - fpga.last_job) > self.getwork_interval:
+					self.getNewJob(fpga)
 			
 			gold = None
 			try:
@@ -226,11 +224,11 @@ class RPCClient:
 				retries_left = self.NUM_RETRIES
 				success = self.sendGold(gold)
 				while not success and retries_left > 0:
-					self.logger.reportDebug("(FPGA%d) Error sending nonce! Retrying..." % gold.chain)
+					self.logger.reportDebug("%d: Error sending nonce! Retrying..." % gold.fpgaID)
 					success = self.sendGold(gold)
 					retries_left -= 1
 				if not success:
-					self.logger.reportFound(hex(gold.nonce)[2:], False, gold.chain)
+					self.logger.reportFound(hex(gold.nonce)[2:], False, gold.fpgaID)
 	
 	def longpoll_loop(self):
 		last_host = None
