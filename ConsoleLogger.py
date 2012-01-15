@@ -281,9 +281,9 @@ class ConsoleLogger(object):
 				status += ' | ' + self.serial
 			else:
 				acc = sum([fpga.accepted_count for fpga in self.fpga_list])
-				rej = sum([fpga.accepted_count for fpga in self.fpga_list])
-				tot = sum([fpga.accepted_count for fpga in self.fpga_list])
-				inv = sum([fpga.accepted_count for fpga in self.fpga_list])
+				rej = sum([fpga.rejected_count for fpga in self.fpga_list])
+				tot = sum([fpga.nonce_count for fpga in self.fpga_list])
+				inv = sum([fpga.invalid_count for fpga in self.fpga_list])
 				try:
 					rej_pct = 100.*rej/(acc+rej)
 				except ZeroDivisionError:
