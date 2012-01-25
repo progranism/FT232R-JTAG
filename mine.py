@@ -34,6 +34,7 @@ from struct import pack, unpack
 from hashlib import sha256
 
 NUM_RETRIES = 5
+BASE_TARGET = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000'.decode('hex')
 
 # Option parsing:
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] -u <pool-url> -w <user:pass>")
@@ -49,6 +50,8 @@ parser.add_option("-u", "--url", type="str", dest="url",
                   help="URL for the pool or bitcoind server, e.g. pool.com:8337")
 parser.add_option("-w", "--worker", type="str", dest="worker",
                   help="Worker username and password for the pool, e.g. user:pass")
+parser.add_option("-s", "--sleep", action="store_true", dest="sleep", default=False,
+                  help="Put FPGAs to sleep upon exit [EXPERIMENTAL]")
 settings, args = parser.parse_args()
 
 class Object(object):
@@ -68,9 +71,7 @@ def checkNonce(gold):
 	hashInput = pack('>76sI', staticData, gold.nonce)
 	hashOutput = sha256(sha256(hashInput).digest()).digest()
 	
-	base_target = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000'
-	
-	if checkTarget(base_target.decode('hex'), hashOutput):
+	if checkTarget(BASE_TARGET, hashOutput):
 		logger.reportValid(gold.fpgaID)
 	else:
 		logger.reportError(hex(gold.nonce)[2:], gold.fpgaID)
@@ -105,8 +106,12 @@ def nonceLoop():
 def mineLoop(fpga_list):
 	for fpga in fpga_list:
 		fpga.clearQueue()
+	
 	while True:
+		if stop: return
+		
 		time.sleep(0.1)
+		
 		for fpga in fpga_list:
 			job = None
 			nonce = None
@@ -134,7 +139,6 @@ def mineLoop(fpga_list):
 				if nonce is not None:
 					handleNonce(fpga.current_job, nonce, fpga.id)
 
-
 if settings.url is None:
 	print "ERROR: URL not specified!"
 	parser.print_usage()
@@ -152,62 +156,73 @@ logger = ConsoleLogger(settings.verbose)
 rpcclient = RPCClient(settings, logger, goldqueue)
 
 try:
-	with FT232R() as ft232r:
-		portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
-		ft232r.open(settings.devicenum, portlist)
+	# open FT232R
+	ft232r = FT232R()
+	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
+	ft232r.open(settings.devicenum, portlist)
+	
+	logger.reportOpened(ft232r.devicenum, ft232r.serial)
+	
+	if settings.chain == 0 or settings.chain == 1:
+		fpga_list.append(FPGA(ft232r, settings.chain, logger))
+	elif settings.chain == 2:
+		fpga_list.append(FPGA(ft232r, 0, logger))
+		fpga_list.append(FPGA(ft232r, 1, logger))
+	else:
+		logger.log("ERROR: Invalid chain option!", False)
+		parser.print_usage()
+		exit()
+	
+	logger.fpga_list = fpga_list
+	rpcclient.fpga_list = fpga_list
+	
+	for id, fpga in enumerate(fpga_list):
+		fpga.id = id
+		logger.reportDebug("Discovering FPGA %d..." % id, False)
+		fpga.jtag.detect()
 		
-		logger.reportOpened(ft232r.devicenum, ft232r.serial)
-		
-		if settings.chain == 0 or settings.chain == 1:
-			fpga_list.append(FPGA(ft232r, settings.chain, logger))
-		elif settings.chain == 2:
-			fpga_list.append(FPGA(ft232r, 0, logger))
-			fpga_list.append(FPGA(ft232r, 1, logger))
-		else:
-			logger.log("ERROR: Invalid chain option!", False)
-			parser.print_usage()
-			exit()
-		
-		logger.fpga_list = fpga_list
-		rpcclient.fpga_list = fpga_list
-		
-		for id, fpga in enumerate(fpga_list):
-			fpga.id = id
-			logger.reportDebug("Discovering FPGA %d ..." % id, False)
-			fpga.jtag.detect()
-			
-			logger.reportDebug("Found %i device%s ..." % (fpga.jtag.deviceCount,
-				's' if fpga.jtag.deviceCount != 1 else ''), False)
+		logger.reportDebug("Found %i device%s:" % (fpga.jtag.deviceCount,
+			's' if fpga.jtag.deviceCount != 1 else ''), False)
 
-			for idcode in fpga.jtag.idcodes:
-				msg = " FPGA" + str(id) + ": "
-				msg += JTAG.decodeIdcode(idcode)
-				logger.reportDebug(msg, False)
-				
-		
-		logger.log("Connected to %d FPGAs" % len(fpga_list), False)
-		
-		logger.start()
-		rpcclient.start()
-		
-		noncequeue = Queue()
-		nonceThread = Thread(target=nonceLoop)
-		nonceThread.daemon = True
-		nonceThread.start()
-
-		mineThread = Thread(target=mineLoop, args=(fpga_list,))
-		mineThread.daemon = True
-		mineThread.start()
-		
-		while True:
-			time.sleep(1)
-			logger.updateStatus()
-			if mineThread is None or not mineThread.isAlive():
-				logger.log("Restarting minethread")
-				mineThread = Thread(target=mineLoop, args=(fpga_list,))
-				mineThread.daemon = True
-				mineThread.start()
+		for idcode in fpga.jtag.idcodes:
+			msg = " FPGA" + str(id) + ": "
+			msg += JTAG.decodeIdcode(idcode)
+			logger.reportDebug(msg, False)
+	
+	logger.log("Connected to %d FPGAs" % len(fpga_list), False)
+	
+	logger.start()
+	rpcclient.start()
+	
+	noncequeue = Queue()
+	nonceThread = Thread(target=nonceLoop)
+	nonceThread.daemon = True
+	nonceThread.start()
+	
+	stop = False
+	
+	mineThread = Thread(target=mineLoop, args=(fpga_list,))
+	mineThread.daemon = True
+	mineThread.start()
+	
+	while True:
+		time.sleep(1)
+		logger.updateStatus()
+		if mineThread is None or not mineThread.isAlive():
+			logger.log("Restarting minethread")
+			mineThread = Thread(target=mineLoop, args=(fpga_list,))
+			mineThread.daemon = True
+			mineThread.start()
 
 except KeyboardInterrupt:
+	stop = True
+	logger.lineLength += 2
+	pass
+
+finally:
 	logger.log("Exiting...")
+	if settings.sleep:
+		for fpga in fpga_list:
+			fpga.sleep()
+	ft232r.close()
 	logger.printSummary(settings)

@@ -23,12 +23,10 @@
 from ft232r import FT232R, FT232R_PortList
 from jtag import JTAG
 from BitstreamReader import BitFile, BitFileReadError, BitFileMismatch
+from fpga import FPGA
 import time
 from optparse import OptionParser
 from ConsoleLogger import ConsoleLogger
-
-class DeviceNotOpened(Exception): pass
-class NoAvailableDevices(Exception): pass
 
 # Option parsing:
 parser = OptionParser(usage="%prog [-d <devicenum>] [-c <chain>] <path-to-bitstream-file>")
@@ -38,78 +36,9 @@ parser.add_option("-c", "--chain", type="int", dest="chain", default=2,
                   help="JTAG chain number, can be 0, 1, or 2 for both FPGAs on the board (default 2)")
 parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
                   help="Verbose logging")
+parser.add_option("-s", "--sleep", action="store_true", dest="sleep", default=False,
+                  help="Put FPGAs to sleep after programming [EXPERIMENTAL]")
 settings, args = parser.parse_args()
-
-# LSB first
-def bits2int(bits):
-	x = 0
-	for i in range(len(bits)):
-		x |= bits[i] << i
-	return x
-
-def programBitstream(ft232r, jtag, chain, processed_bitstream):
-	# Select the device
-	jtag.reset()
-	jtag.part(jtag.deviceCount-1)
-	
-	# Load with BYPASS
-	jtag.instruction(0xFF)
-	jtag.shift_ir()
-
-	# Load with JPROGRAM
-	jtag.instruction(0x0B)
-	jtag.shift_ir()
-
-	# Load with CFG_IN
-	jtag.instruction(0x05)
-	jtag.shift_ir()
-
-	# Clock TCK for 10000 cycles
-	jtag.runtest(10000)
-
-	# Load with CFG_IN
-	jtag.instruction(0x05)
-	jtag.shift_ir()
-	jtag.shift_dr([0]*32)
-	jtag.instruction(0x05)
-	jtag.shift_ir()
-
-	ft232r.flush()
-
-	#print ord(bitfile.bitstream[5000])
-	#bitfile.bitstream = bitfile.bitstream[0:5000] + chr(0x12) + bitfile.bitstream[5001:]
-
-	# Load bitstream into CFG_IN
-	jtag.load_bitstream(processed_bitstream, logger.updateProgress)
-
-	# Load with JSTART
-	jtag.instruction(0x0C)
-	jtag.shift_ir()
-
-	# Let the device start
-	jtag.runtest(24)
-	
-	# Load with Bypass
-	jtag.instruction(0xFF)
-	jtag.shift_ir()
-	jtag.instruction(0xFF)
-	jtag.shift_ir()
-
-	# Load with JSTART
-	jtag.instruction(0x0C)
-	jtag.shift_ir()
-
-	jtag.runtest(24)
-	
-	# Check done pin
-	#jtag.instruction(0xFF)
-	# TODO: Figure this part out. & 0x20 should equal 0x20 to check the DONE pin ... ???
-	#print jtag.read_ir() # & 0x20 == 0x21
-	#jtag.instruction(0xFF)
-	#jtag.shift_ir()
-	#jtag.shift_dr([0])
-
-	ft232r.flush()
 
 logger = ConsoleLogger(settings.verbose)
 
@@ -136,49 +65,45 @@ logger.log(" Date: %s" % bitfile.date, False)
 logger.log(" Time: %s" % bitfile.time, False)
 logger.log(" Bitstream Length: %d" % len(bitfile.bitstream), False)
 
+fpga_list = []
+
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
-	try:
-		ft232r.open(settings.devicenum, portlist)
-	except NoAvailableDevices:
-		logger.log("ERROR: No available devices!", False)
-		exit()
-	except DeviceNotOpened:
-		logger.log("ERROR: Device not opened!", False)
-		exit()
+	ft232r.open(settings.devicenum, portlist)
 	
 	logger.reportOpened(ft232r.devicenum, ft232r.serial)
 	
-	if settings.chain == 2:
-		chain_list = [0,1]
-	elif settings.chain == 0 or settings.chain == 1:
-		chain_list = [settings.chain]
+	if settings.chain == 0 or settings.chain == 1:
+		fpga_list.append(FPGA(ft232r, settings.chain, logger))
+	elif settings.chain == 2:
+		fpga_list.append(FPGA(ft232r, 0, logger))
+		fpga_list.append(FPGA(ft232r, 1, logger))
 	else:
 		logger.log("ERROR: Invalid chain option!", False)
 		parser.print_usage()
 		exit()
 	
-	jtag = [None]*2
-	
-	for chain in chain_list:
-		jtag[chain] = JTAG(ft232r, chain)
-		logger.log("Discovering JTAG chain %d ..." % chain, False)
-		jtag[chain].detect()
+	for id, fpga in enumerate(fpga_list):
+		fpga.id = id
+		logger.reportDebug("Discovering FPGA %d ..." % id, False)
+		fpga.jtag.detect()
 		
-		logger.log("Found %i device%s:" % 
-		           (jtag[chain].deviceCount, 's' if jtag[chain].deviceCount != 1 else ''),
-		           False)
+		logger.reportDebug("Found %i device%s:" % (fpga.jtag.deviceCount,
+			's' if fpga.jtag.deviceCount != 1 else ''), False)
 		
-		if jtag[chain].deviceCount > 1:
+		if fpga.jtag.deviceCount > 1:
 			logger.log("Warning:", False)
 			logger.log("This software currently supports only one device per chain.", False)
 			logger.log("Only part 0 will be programmed.", False)
-		for i, idcode in enumerate(jtag[chain].idcodes):
-			logger.log(' %d) %s %s' % (
-									i, JTAG.decodeIdcode(idcode),
-									'*' if i > 0 else ''), False)
+
+		for idcode in fpga.jtag.idcodes:
+			msg = " FPGA" + str(id) + ": "
+			msg += JTAG.decodeIdcode(idcode)
+			logger.reportDebug(msg, False)
 			if idcode & 0x0FFFFFFF != bitfile.idcode:
 				raise BitFileMismatch
+	
+	logger.log("Connected to %d FPGAs" % len(fpga_list), False)
 	
 	if settings.chain == 2:
 		jtag = JTAG(ft232r, settings.chain)
@@ -186,7 +111,7 @@ with FT232R() as ft232r:
 		jtag.idcodes = [bitfile.idcode]
 		jtag._processIdcodes()
 	else:
-		jtag = jtag[settings.chain]
+		jtag = fpga_list[settings.chain].jtag
 	
 	if bitfile.processed[settings.chain]:
 		logger.log("Loading pre-processed bitstream...", False)
@@ -209,8 +134,12 @@ with FT232R() as ft232r:
 	else:
 		logger.log("Programming FPGA %d..." % settings.chain, False)
 	start_time = time.time()
-	programBitstream(ft232r, jtag, settings.chain, processed_bitstream)
+	FPGA.programBitstream(ft232r, jtag, logger, processed_bitstream)
 	if settings.chain == 2:
 		logger.log("Programmed both FPGAs in %f seconds" % (time.time() - start_time), False)
 	else:
 		logger.log("Programmed FPGA %d in %f seconds" % (settings.chain, time.time() - start_time), False)
+	
+	if settings.sleep:
+		for fpga in fpga_list:
+			fpga.sleep()
