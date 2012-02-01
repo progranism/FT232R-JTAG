@@ -21,6 +21,9 @@
 from Queue import Queue, Empty, Full
 from jtag import JTAG
 
+class Object(object):
+	pass
+
 # JTAG instructions:
 USER_INSTRUCTION = 0b000010
 JSHUTDOWN        = 0b001101
@@ -192,6 +195,21 @@ class FPGA:
 		
 		#self.logger.reportDebug("%d: Job data loaded in %.3f seconds" % (self.id, (time.time() - start_time)))
 		self.logger.reportDebug("%d: Job data loaded" % self.id)
+	
+	def getJob(self):
+		try:
+			#logger.reportDebug("%d: Checking for new job..." % fpga.id)
+			return self.jobqueue.get(False)
+		except Empty:
+			return None
+	
+	def putJob(self, work):
+		job = Object()
+		job.midstate = work['midstate']
+		job.data = work['data']
+		job.target = work['target']
+		self.jobqueue.put(job)
+		#self.logger.reportDebug("%d: jobqueue loaded (%d)" % (fpga.id, self.jobqueue.qsize()))
 	
 	def sleep(self):
 		self.logger.reportDebug("%d: Going to sleep..." % self.id)

@@ -113,13 +113,8 @@ def mineLoop(fpga_list):
 		time.sleep(0.1)
 		
 		for fpga in fpga_list:
-			job = None
 			nonce = None
-			try:
-				#logger.reportDebug("%d: Checking for new job..." % fpga.id)
-				job = fpga.jobqueue.get(False)
-			except Empty:
-				job = None
+			job = fpga.getJob()
 			
 			if job is not None:
 				#logger.reportDebug("%d: Loading new job..." % fpga.id)

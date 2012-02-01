@@ -41,9 +41,6 @@ def socketwrap(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=0):
 	return sockobj
 socket.socket = socketwrap
 
-class Object(object):
-	pass
-
 class RPCClient:
 	
 	NUM_RETRIES = 5
@@ -162,12 +159,7 @@ class RPCClient:
 			if work is None:
 				(self.connection, work) = self.getwork(self.connection, fpga.id)
 			
-			job = Object()
-			job.midstate = work['midstate']
-			job.data = work['data']
-			job.target = work['target']
-			fpga.jobqueue.put(job)
-			#self.logger.reportDebug("%d: jobqueue loaded (%d)" % (chain, self.jobqueue[chain].qsize()))
+			fpga.putJob(work)
 			fpga.last_job = time.time()
 			return True
 		except:
