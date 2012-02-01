@@ -218,6 +218,7 @@ class FPGA:
 		self.jtag.instruction(JSHUTDOWN)
 		self.jtag.shift_ir()
 		self.jtag.runtest(24)
+		self.jtag.tap.reset()
 		
 		self.ft232r.flush()
 		
@@ -227,6 +228,9 @@ class FPGA:
 		self.logger.reportDebug("%d: Waking up..." % self.id)
 		
 		self.jtag.tap.reset()
+		self.jtag.instruction(JSTART)
+		self.jtag.shift_ir()
+		self.jtag.runtest(24)
 		self.jtag.instruction(BYPASS)
 		self.jtag.shift_ir()
 		self.jtag.instruction(BYPASS)
@@ -234,6 +238,7 @@ class FPGA:
 		self.jtag.instruction(JSTART)
 		self.jtag.shift_ir()
 		self.jtag.runtest(24)
+		self.jtag.tap.reset()
 		
 		self.ft232r.flush()
 		
