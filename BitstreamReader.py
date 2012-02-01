@@ -90,7 +90,7 @@ class BitFile:
 			bitfile.processed = [False]*3
 			
 			for i in range(3):
-				processed_name = name.split('.')[0] + '.bit.' + str(i)
+				processed_name = name + '.' + str(i)
 				if os.path.isfile(processed_name):
 					bitfile.processed[i] = True
 			
@@ -150,7 +150,7 @@ class BitFile:
 	
 	@staticmethod
 	def load_processed(name, chain):
-		processed_name = name.split('.')[0] + ".bit." + str(chain)
+		processed_name = name + "." + str(chain)
 		return pickle.load(open(processed_name, "rb"))
 	
 	# Read a 2-byte, unsigned, Big Endian length.
