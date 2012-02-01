@@ -204,6 +204,30 @@ class FT232R:
 		self.handle.setBitMode(self.portlist.output_mask(), 1)
 		self.synchronous = False
 	
+	def _setCBUSBits(self, sc, cs):
+		# CBUS pins:
+		#  SIO_0 = CBUS0 = input
+		#  SIO_1 = CBUS1 = input
+		#  CS    = CBUS2 = output
+		#  SC    = CBUS3 = output
+		
+		SIO_0 = 0
+		SIO_1 = 1
+		CS    = 2
+		SC    = 3
+		read_mask = ( (1 << SC) | (1 << CS) | (0 << SIO_1) | (0 << SIO_0) ) << 4
+		CBUS_mode = 0x20
+		
+		# set up I/O and start conversion:
+		pin_state = (sc << SC) | (cs << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+
+	def _getCBUSBits(self):
+		SIO_0 = 0
+		SIO_1 = 1
+		data = self.handle.getBitMode()
+		return (((data >> SIO_0) & 1), ((data >> SIO_1) & 1)) 
+		
 	def flush(self):
 		"""Write all data in the write buffer and purge the FT232R buffers"""
 		self._setAsyncMode()
@@ -262,57 +286,29 @@ class FT232R:
 	def read_temps(self):
 		self._log("Reading temp sensors.")
 		
-		# CBUS pins:
-		#  SIO_0 = CBUS0
-		#  SIO_1 = CBUS1
-		#  CS    = CBUS2
-		#  SC    = CBUS3
+		# clock SC with CS high:
+		self._setCBUSBits(0, 1)
+		self._setCBUSBits(1, 1)
+		self._setCBUSBits(0, 1)
+		self._setCBUSBits(1, 1)
 		
-		SIO_0 = 0 # input
-		SIO_1 = 1 # input
-		CS    = 2 # output
-		SC    = 3 # output
-		read_mask = ( (1 << SC) | (1 << CS) | (0 << SIO_1) | (0 << SIO_0) ) << 4
-		CBUS_mode = 0x20
-		
-		# set up I/O and start conversion:
-		pin_state = (0 << SC) | (1 << CS)
-		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
-		
-		pin_state = (1 << SC) | (1 << CS)
-		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
-		
-		pin_state = (0 << SC) | (1 << CS)
-		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
-		
-		pin_state = (1 << SC) | (1 << CS)
-		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
-		
-		pin_state = (0 << SC) | (0 << CS)
-		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		# drop CS to start conversion:
+		self._setCBUSBits(0, 0)
 		
 		code0 = 0
 		code1 = 0
 		
 		for i in range(16):
-			pin_state = (1 << SC) | (0 << CS)
-			self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
-			
-			data = self.handle.getBitMode()
-			pin_state = (0 << SC) | (0 << CS)
-			self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
-			
-			code0 |= ((data >> SIO_0) & 1) << (15 - i)
-			code1 |= ((data >> SIO_1) & 1) << (15 - i)
+			self._setCBUSBits(1, 0)
+			(sio_0, sio_1) = self._getCBUSBits()
+			code0 |= sio_0 << (15 - i)
+			code1 |= sio_1 << (15 - i)
+			self._setCBUSBits(0, 0)
 		
-		pin_state = (0 << SC) | (1 << CS)
-		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
-		
-		pin_state = (1 << SC) | (1 << CS)
-		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
-		
-		pin_state = (0 << SC) | (1 << CS)
-		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		# assert CS and clock SC:
+		self._setCBUSBits(0, 1)
+		self._setCBUSBits(1, 1)
+		self._setCBUSBits(0, 1)
 		
 		if (code0 >> 15) & 1 == 1: code0 -= (1 << 16)
 		if (code1 >> 15) & 1 == 1: code1 -= (1 << 16)
