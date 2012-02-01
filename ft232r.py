@@ -258,3 +258,66 @@ class FT232R:
 		self._log("Read %d bytes." % len(data))
 		
 		return data
+
+	def read_temps(self):
+		self._log("Reading temp sensors.")
+		
+		# CBUS pins:
+		#  SIO_0 = CBUS0
+		#  SIO_1 = CBUS1
+		#  CS    = CBUS2
+		#  SC    = CBUS3
+		
+		SIO_0 = 0 # input
+		SIO_1 = 1 # input
+		CS    = 2 # output
+		SC    = 3 # output
+		read_mask = ( (1 << SC) | (1 << CS) | (0 << SIO_1) | (0 << SIO_0) ) << 4
+		CBUS_mode = 0x20
+		
+		# set up I/O and start conversion:
+		pin_state = (0 << SC) | (1 << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		
+		pin_state = (1 << SC) | (1 << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		
+		pin_state = (0 << SC) | (1 << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		
+		pin_state = (1 << SC) | (1 << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		
+		pin_state = (0 << SC) | (0 << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		
+		code0 = 0
+		code1 = 0
+		
+		for i in range(16):
+			pin_state = (1 << SC) | (0 << CS)
+			self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+			
+			data = self.handle.getBitMode()
+			pin_state = (0 << SC) | (0 << CS)
+			self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+			
+			code0 |= ((data >> SIO_0) & 1) << (15 - i)
+			code1 |= ((data >> SIO_1) & 1) << (15 - i)
+		
+		pin_state = (0 << SC) | (1 << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		
+		pin_state = (1 << SC) | (1 << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		
+		pin_state = (0 << SC) | (1 << CS)
+		self.handle.setBitMode(read_mask | pin_state, CBUS_mode)
+		
+		if (code0 >> 15) & 1 == 1: code0 -= (1 << 16)
+		if (code1 >> 15) & 1 == 1: code1 -= (1 << 16)
+		
+		temp0 = (code0 >> 2) * 0.03125
+		temp1 = (code1 >> 2) * 0.03125
+		
+		return (temp0, temp1)
