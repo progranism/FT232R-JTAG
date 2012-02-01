@@ -168,7 +168,6 @@ class RPCClient:
 			return False
 
 	def sendGold(self, gold):
-		#hexnonce = hex(gold.nonce)[8:10] + hex(gold.nonce)[6:8] + hex(gold.nonce)[4:6] + hex(gold.nonce)[2:4]
 		hexnonce = pack('I', long(gold.nonce)).encode('hex') # suggested by m0mchil
 		data = gold.job.data[:128+24] + hexnonce + gold.job.data[128+24+8:]
 		

@@ -33,7 +33,6 @@ from Queue import Queue, Empty, Full
 from struct import pack, unpack
 from hashlib import sha256
 
-NUM_RETRIES = 5
 BASE_TARGET = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000'.decode('hex')
 
 # Option parsing:
