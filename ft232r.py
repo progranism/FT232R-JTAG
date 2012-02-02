@@ -237,6 +237,15 @@ class FT232R:
 		self._setSyncMode()
 		self._purgeBuffers()
 	
+	def write(self, data):
+		return self.handle.write(data)
+	
+	def getStatus(self):
+		return self.handle.getStatus()
+	
+	def getQueueStatus(self):
+		return self.handle.getQueueStatus()
+	
 	def read_data(self, num):
 		"""Read num bytes from the FT232R and return an array of data."""
 		self._log("Reading %d bytes." % num)

@@ -235,7 +235,7 @@ class JTAG():
 		last_update = 0
 		
 		for chunk in chunks:
-			wrote = self.ft232r.handle.write(chunk)
+			wrote = self.ft232r.write(chunk)
 			if wrote != len(chunk):
 				raise WriteError()
 			written += len(chunk) / 16
@@ -249,12 +249,12 @@ class JTAG():
 		print ""
 		print "Loaded data in %d secs." % (time.time() - start_time)
 		
-		#self._log("Status: " + str(self.ft232r.handle.getStatus()))
-		#self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
+		#self._log("Status: " + str(self.ft232r.getStatus()))
+		#self._log("QueueStatus: " + str(self.ft232r.getQueueStatus()))
 		self.ft232r._setSyncMode()
 		self.ft232r._purgeBuffers()
-		#self._log("Status: " + str(self.ft232r.handle.getStatus()))
-		#self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
+		#self._log("Status: " + str(self.ft232r.getStatus()))
+		#self._log("QueueStatus: " + str(self.ft232r.getQueueStatus()))
 		
 		for bit in last_bits[:-1]:
 			self.jtagClock(tdi=bit)
@@ -262,8 +262,8 @@ class JTAG():
 		
 		self.tap.goto(TAP.IDLE)
 		self.ft232r.flush()
-		#self._log("Status: " + str(self.ft232r.handle.getStatus()))
-		#self._log("QueueStatus: " + str(self.ft232r.handle.getQueueStatus()))
+		#self._log("Status: " + str(self.ft232r.getStatus()))
+		#self._log("QueueStatus: " + str(self.ft232r.getQueueStatus()))
 	
 	def load_bitstream(self, processed_bitstream, progressCallback=None):
 		self.tap.goto(TAP.SELECT_DR)
@@ -281,7 +281,7 @@ class JTAG():
 		last_update = 0
 		
 		for chunk in processed_bitstream.chunks:
-			wrote = self.ft232r.handle.write(chunk)
+			wrote = self.ft232r.write(chunk)
 			if wrote != len(chunk):
 				raise WriteError()
 			written += len(chunk) / 16
