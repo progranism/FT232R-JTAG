@@ -128,7 +128,7 @@ def mineLoop(fpga_list):
 				fpga.current_job = job
 			
 			if fpga.current_job is not None:
-				#logger.reportDebug("%d: Checking for nonce..." % chain)
+				#logger.reportDebug("%d: Checking for nonce..." % fpga.id)
 				nonce = fpga.readNonce()
 				if nonce is not None:
 					handleNonce(fpga.current_job, nonce, fpga.id)
@@ -173,7 +173,7 @@ try:
 	for id, fpga in enumerate(fpga_list):
 		fpga.id = id
 		logger.reportDebug("Discovering FPGA %d..." % id, False)
-		fpga.jtag.detect()
+		fpga.detect()
 		
 		logger.reportDebug("Found %i device%s:" % (fpga.jtag.deviceCount,
 			's' if fpga.jtag.deviceCount != 1 else ''), False)

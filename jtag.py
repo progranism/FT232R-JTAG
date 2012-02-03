@@ -174,103 +174,13 @@ class JTAG():
 		for i in range(tckcount):
 			self.jtagClock(tms=0)
 	
-	# Use to shift lots of bytes into DR.
-	# TODO: Assumes current_part is the last device in the chain.
-	# TODO: Assumes data is MSB first.
-	def bulk_shift_dr(self, data, progressCallback=None):
-		self.tap.goto(TAP.SELECT_DR)
-		self.tap.goto(TAP.SHIFT_DR)
-		self.ft232r.flush()
-		
-		bytetotal = len(data)
-
-		print "Pre-processing..."
-		# Pre-process
-		# TODO: Some way to cache this...
-		chunk = ""
-		chunks = []
-		CHUNK_SIZE = 4096*4
-		bytes_processed = 0
-		
-		start_time = time.time()
-		last_update = 0
-
-		for b in data[:-1]:
-			d = ord(b)
-			
-			for i in range(7, -1, -1):
-				x = (d >> i) & 1
-				chunk += self._formatJtagClock(tdi=x)
-
-			if len(chunk) >= CHUNK_SIZE:
-				chunks.append(chunk)
-				chunk = ""
-			
-			bytes_processed += 1
-			
-			if (time.time() - last_update) > 5:
-				progressCallback(start_time, time.time(), bytes_processed, bytetotal)
-				last_update = time.time()
-
-		if len(chunk) > 0:
-			chunks.append(chunk)
-
-		last_bits = []
-		d = ord(data[-1])
-		for i in range(7, -1, -1):
-			last_bits.append((d >> i) & 1)
-
-		for i in range(self.current_part):
-			last_bits.append(0)
-
-		progressCallback(start_time, time.time(), bytes_processed, bytetotal)
-		
-		print ""
-		print "Processed in %d secs." % (time.time() - start_time)
-		self.ft232r._setAsyncMode()
-		
-		print "Writing..."
-		written = 0
-		start_time = time.time()
-		last_update = 0
-		
-		for chunk in chunks:
-			wrote = self.ft232r.write(chunk)
-			if wrote != len(chunk):
-				raise WriteError()
-			written += len(chunk) / 16
-			
-			if time.time() > last_update + 5 and progressCallback:
-				progressCallback(start_time, time.time(), written, bytetotal)
-				last_update = time.time()
-		
-		progressCallback(start_time, time.time(), written, bytetotal)
-		
-		print ""
-		print "Loaded data in %d secs." % (time.time() - start_time)
-		
-		#self._log("Status: " + str(self.ft232r.getStatus()))
-		#self._log("QueueStatus: " + str(self.ft232r.getQueueStatus()))
-		self.ft232r._setSyncMode()
-		self.ft232r._purgeBuffers()
-		#self._log("Status: " + str(self.ft232r.getStatus()))
-		#self._log("QueueStatus: " + str(self.ft232r.getQueueStatus()))
-		
-		for bit in last_bits[:-1]:
-			self.jtagClock(tdi=bit)
-		self.jtagClock(tdi=last_bits[-1], tms=1)
-		
-		self.tap.goto(TAP.IDLE)
-		self.ft232r.flush()
-		#self._log("Status: " + str(self.ft232r.getStatus()))
-		#self._log("QueueStatus: " + str(self.ft232r.getQueueStatus()))
-	
 	def load_bitstream(self, processed_bitstream, progressCallback=None):
 		self.tap.goto(TAP.SELECT_DR)
 		self.tap.goto(TAP.SHIFT_DR)
 		self.ft232r.flush()
 		
-		self.ft232r._setAsyncMode()
+		with self.ft232r.lock:
+			self.ft232r._setAsyncMode()
 		
 		written = 0
 		bytetotal = 0
@@ -295,8 +205,9 @@ class JTAG():
 		#print ""
 		#print "Loaded data in %d secs." % (time.time() - start_time)
 		
-		self.ft232r._setSyncMode()
-		self.ft232r._purgeBuffers()
+		with self.ft232r.lock:
+			self.ft232r._setSyncMode()
+			self.ft232r._purgeBuffers()
 		
 		for bit in processed_bitstream.last_bits[:-1]:
 			self.jtagClock(tdi=bit)
@@ -335,13 +246,14 @@ class JTAG():
 	def _formatJtagState(self, tck, tms, tdi):
 		return self.portlist.format(tck, tms, tdi)
 	
-	def jtagClock(self, tms=0, tdi=0):		
-		self.ft232r.write_buffer += self._formatJtagState(0, tms, tdi)
-		self.ft232r.write_buffer += self._formatJtagState(1, tms, tdi)
-		self.ft232r.write_buffer += self._formatJtagState(1, tms, tdi)
+	def jtagClock(self, tms=0, tdi=0):
+		with self.ft232r.lock:
+			self.ft232r.write_buffer += self._formatJtagState(0, tms, tdi)
+			self.ft232r.write_buffer += self._formatJtagState(1, tms, tdi)
+			self.ft232r.write_buffer += self._formatJtagState(1, tms, tdi)
 
-		self.tap.clocked(tms)
-		self._tckcount += 1
+			self.tap.clocked(tms)
+			self._tckcount += 1
 	
 	def parseByte(self, bits):
 		return (bits[7] << 7) | (bits[6] << 6) | (bits[5] << 5) | (bits[4] << 4) | (bits[3] << 3) | (bits[2] << 2) |  (bits[1] << 1) | bits[0]

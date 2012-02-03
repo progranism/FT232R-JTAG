@@ -23,6 +23,7 @@ import d2xx
 import struct
 from jtag import JTAG
 import time
+from threading import RLock
 
 DEFAULT_FREQUENCY = 3000000
 
@@ -105,6 +106,7 @@ class FT232R:
 		self.portlist = None
 		self.devicenum = None
 		self.serial = ""
+		self.lock = RLock()
 		
 	def __enter__(self): 
 		return self
@@ -156,13 +158,13 @@ class FT232R:
 	def close(self):
 		if self.handle is None:
 			return
-
-		self._log("Closing device...")
-
-		try:
-			self.handle.close()
-		finally:
-			self.handle = None
+		
+		with self.lock:
+			self._log("Closing device...")
+			try:
+				self.handle.close()
+			finally:
+				self.handle = None
 
 		self._log("Device closed.")
 	
@@ -170,12 +172,11 @@ class FT232R:
 	def _purgeBuffers(self):
 		if self.handle is None:
 			raise DeviceNotOpened()
-
+		
 		self.handle.purge(0)
 	
 	def _setBaudRate(self, rate):
 		self._log("Setting baudrate to %i" % rate)
-
 		# Documentation says that we should set a baudrate 16 times lower than
 		# the desired transfer speed (for bit-banging). However I found this to
 		# not be the case. 3Mbaud is the maximum speed of the FT232RL
@@ -186,9 +187,8 @@ class FT232R:
 		"""Put the FT232R into Synchronous mode."""
 		if self.handle is None:
 			raise DeviceNotOpened()
-
-		self._log("Device entering Synchronous mode.")
-
+		
+		self._log("Device entering Synchronous mode.", 2)
 		self.handle.setBitMode(self.portlist.output_mask(), 0)
 		self.handle.setBitMode(self.portlist.output_mask(), 4)
 		self.synchronous = True
@@ -197,9 +197,8 @@ class FT232R:
 		"""Put the FT232R into Asynchronous mode."""
 		if self.handle is None:
 			raise DeviceNotOpened()
-
-		self._log("Device entering Asynchronous mode.")
-
+		
+		self._log("Device entering Asynchronous mode.", 2)
 		self.handle.setBitMode(self.portlist.output_mask(), 0)
 		self.handle.setBitMode(self.portlist.output_mask(), 1)
 		self.synchronous = False
@@ -248,7 +247,7 @@ class FT232R:
 	
 	def read_data(self, num):
 		"""Read num bytes from the FT232R and return an array of data."""
-		self._log("Reading %d bytes." % num)
+		self._log("Reading %d bytes." % num, 3)
 		
 		if num == 0:
 			self.flush()
@@ -260,7 +259,7 @@ class FT232R:
 
 		# Write all data that we don't care about.
 		if len(self.write_buffer) > 0:
-			self._log("Flushing out " + str(len(self.write_buffer)))
+			self._log("Flushing out " + str(len(self.write_buffer)), 3)
 			self.flush()
 			self._purgeBuffers()
 
@@ -269,9 +268,9 @@ class FT232R:
 		while len(write_buffer) > 0:
 			bytes_to_write = min(len(write_buffer), 3072)
 			
-			self._log("Writing %d/%d bytes" % (bytes_to_write, len(write_buffer)))
+			self._log("Writing %d/%d bytes" % (bytes_to_write, len(write_buffer)), 3)
 			wrote = self.handle.write(write_buffer[:bytes_to_write])
-			self._log("Wrote %d bytes" % wrote)
+			self._log("Wrote %d bytes" % wrote, 3)
 			if wrote != bytes_to_write:
 				raise WriteError()
 			write_buffer = write_buffer[wrote:]
@@ -287,9 +286,8 @@ class FT232R:
 				#self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
 			
 			data.extend(self.handle.read(wrote))
-			
-		self._log("Read %d bytes." % len(data))
-		
+				
+		self._log("Read %d bytes." % len(data), 3)
 		return data
 
 	def read_temps(self):

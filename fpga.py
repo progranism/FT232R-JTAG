@@ -20,6 +20,7 @@
 
 from Queue import Queue, Empty, Full
 from jtag import JTAG
+import time
 
 class Object(object):
 	pass
@@ -77,63 +78,67 @@ class FPGA:
 		
 		self.asleep = True
 	
+	def detect(self):
+		with self.ft232r.lock: self.jtag.detect()
+	
 	def readByte(self):
 		bits = int2bits(0, 13)
 		byte = bits2int(self.jtag.read_dr(bits))
 		return byte
 	
 	def readNonce(self):
-		if self.asleep: self.wake()
-		self.jtag.tap.reset()
-		self.jtag.instruction(USER_INSTRUCTION)
-		self.jtag.shift_ir()
-		self.asleep = False
+		with self.ft232r.lock:
+			if self.asleep: self.wake()
+			self.jtag.tap.reset()
+			self.jtag.instruction(USER_INSTRUCTION)
+			self.jtag.shift_ir()
+			self.asleep = False
 
-		# Sync to the beginning of a nonce.
-		# The MSB is a VALID flag. If 0, data is invalid (queue empty).
-		# The next 4-bits indicate which byte of the nonce we got.
-		# 1111 is LSB, and then 0111, 0011, 0001.
-		byte = None
-		while True:
-			byte = self.readByte()
+			# Sync to the beginning of a nonce.
+			# The MSB is a VALID flag. If 0, data is invalid (queue empty).
+			# The next 4-bits indicate which byte of the nonce we got.
+			# 1111 is LSB, and then 0111, 0011, 0001.
+			byte = None
+			while True:
+				byte = self.readByte()
 
-			# check data valid bit:
-			if byte < 0x1000:
-				self.jtag.tap.reset()
-				return None
+				# check data valid bit:
+				if byte < 0x1000:
+					self.jtag.tap.reset()
+					return None
+				
+				#self.logger.reportDebug("%d: Read: %04x" % (self.id, byte))
+				
+				# check byte counter:
+				if (byte & 0xF00) == 0xF00:
+					break
 			
-			#self.logger.reportDebug("%d: Read: %04x" % (self.id, byte))
-			
-			# check byte counter:
-			if (byte & 0xF00) == 0xF00:
-				break
-		
-		# We now have the first byte
-		nonce = byte & 0xFF
-		count = 1
-		#self.logger.reportDebug("%d: Potential nonce, reading the rest..." % self.id)
-		while True:
-			byte = self.readByte()
-			
-			#self.logger.reportDebug("%d: Read: %04x" % (self.id, byte))
-			
-			# check data valid bit:
-			if byte < 0x1000:
-				self.jtag.tap.reset()
-				return None
-			
-			# check byte counter:
-			if (byte & 0xF00) >> 8 != (0xF >> count):
-				self.jtag.tap.reset()
-				return None
-			
-			nonce |= (byte & 0xFF) << (count * 8)
-			count += 1
-			
-			if (byte & 0xF00) == 0x100:
-				break
+			# We now have the first byte
+			nonce = byte & 0xFF
+			count = 1
+			#self.logger.reportDebug("%d: Potential nonce, reading the rest..." % self.id)
+			while True:
+				byte = self.readByte()
+				
+				#self.logger.reportDebug("%d: Read: %04x" % (self.id, byte))
+				
+				# check data valid bit:
+				if byte < 0x1000:
+					self.jtag.tap.reset()
+					return None
+				
+				# check byte counter:
+				if (byte & 0xF00) >> 8 != (0xF >> count):
+					self.jtag.tap.reset()
+					return None
+				
+				nonce |= (byte & 0xFF) << (count * 8)
+				count += 1
+				
+				if (byte & 0xF00) == 0x100:
+					break
 
-		self.jtag.tap.reset()
+			self.jtag.tap.reset()
 
 		#self.logger.reportDebug("%d: Nonce completely read: %08x" % (self.id, nonce))
 
@@ -141,17 +146,18 @@ class FPGA:
 	
 	# TODO: This may not actually clear the queue, but should be correct most of the time.
 	def clearQueue(self):
-		if self.asleep: self.wake()
-		self.jtag.tap.reset()
-		self.jtag.instruction(USER_INSTRUCTION)
-		self.jtag.shift_ir()
-		self.asleep = False
-		
-		self.logger.reportDebug("%d: Clearing queue..." % self.id)
-		while True:
-			if self.readByte() < 0x1000:
-				break
-		self.jtag.tap.reset()
+		with self.ft232r.lock:
+			if self.asleep: self.wake()
+			self.jtag.tap.reset()
+			self.jtag.instruction(USER_INSTRUCTION)
+			self.jtag.shift_ir()
+			self.asleep = False
+			
+			self.logger.reportDebug("%d: Clearing queue..." % self.id)
+			while True:
+				if self.readByte() < 0x1000:
+					break
+			self.jtag.tap.reset()
 		
 		self.logger.reportDebug("%d: Queue cleared" % self.id)
 	
@@ -161,7 +167,7 @@ class FPGA:
 		# so we skip that. Of the last 64 bytes, 52 bytes are constant and
 		# not needed by the FPGA.
 		
-		#start_time = time.time()
+		start_time = time.time()
 		
 		midstate = hexstr2array(job.midstate)
 		data = hexstr2array(job.data)[64:64+12]
@@ -170,30 +176,29 @@ class FPGA:
 		midstate.reverse()
 		data.reverse()
 
-		#self.logger.reportDebug("%d: Loading job data..." % self.id)
+		with self.ft232r.lock:
+			#self.logger.reportDebug("%d: Loading job data..." % self.id)
+			
+			if self.asleep: self.wake()
+			self.jtag.tap.reset()
+			self.jtag.instruction(USER_INSTRUCTION)
+			self.jtag.shift_ir()
 
-		#self.jtag._setAsyncMode()
+			data = midstate + data + [0]
+
+			for i in range(len(data)):
+				x = data[i]
+
+				if i != 0:
+					x = 0x100 | x
+					
+				self.jtag.shift_dr(int2bits(x, 13))
+			
+			self.jtag.tap.reset()
+
+			self.ft232r.flush()
 		
-		if self.asleep: self.wake()
-		self.jtag.tap.reset()
-		self.jtag.instruction(USER_INSTRUCTION)
-		self.jtag.shift_ir()
-
-		data = midstate + data + [0]
-
-		for i in range(len(data)):
-			x = data[i]
-
-			if i != 0:
-				x = 0x100 | x
-				
-			self.jtag.shift_dr(int2bits(x, 13))
-		
-		self.jtag.tap.reset()
-
-		self.ft232r.flush()
-		
-		#self.logger.reportDebug("%d: Job data loaded in %.3f seconds" % (self.id, (time.time() - start_time)))
+		self.logger.reportDebug("%d: Job data loaded in %.3f seconds" % (self.id, time.time() - start_time))
 		self.logger.reportDebug("%d: Job data loaded" % self.id)
 	
 	def getJob(self):
@@ -212,89 +217,92 @@ class FPGA:
 		#self.logger.reportDebug("%d: jobqueue loaded (%d)" % (fpga.id, self.jobqueue.qsize()))
 	
 	def sleep(self):
-		self.logger.reportDebug("%d: Going to sleep..." % self.id)
-		
-		self.jtag.tap.reset()
-		self.jtag.instruction(JSHUTDOWN)
-		self.jtag.shift_ir()
-		self.jtag.runtest(24)
-		self.jtag.tap.reset()
-		
-		self.ft232r.flush()
+		with self.ft232r.lock:
+			self.logger.reportDebug("%d: Going to sleep..." % self.id)
+			
+			self.jtag.tap.reset()
+			self.jtag.instruction(JSHUTDOWN)
+			self.jtag.shift_ir()
+			self.jtag.runtest(24)
+			self.jtag.tap.reset()
+			
+			self.ft232r.flush()
 		
 		self.asleep = True
 	
 	def wake(self):
-		self.logger.reportDebug("%d: Waking up..." % self.id)
+		with self.ft232r.lock:
+			self.logger.reportDebug("%d: Waking up..." % self.id)
 		
-		self.jtag.tap.reset()
-		self.jtag.instruction(JSTART)
-		self.jtag.shift_ir()
-		self.jtag.runtest(24)
-		self.jtag.instruction(BYPASS)
-		self.jtag.shift_ir()
-		self.jtag.instruction(BYPASS)
-		self.jtag.shift_ir()
-		self.jtag.instruction(JSTART)
-		self.jtag.shift_ir()
-		self.jtag.runtest(24)
-		self.jtag.tap.reset()
-		
-		self.ft232r.flush()
+			self.jtag.tap.reset()
+			self.jtag.instruction(JSTART)
+			self.jtag.shift_ir()
+			self.jtag.runtest(24)
+			self.jtag.instruction(BYPASS)
+			self.jtag.shift_ir()
+			self.jtag.instruction(BYPASS)
+			self.jtag.shift_ir()
+			self.jtag.instruction(JSTART)
+			self.jtag.shift_ir()
+			self.jtag.runtest(24)
+			self.jtag.tap.reset()
+			
+			self.ft232r.flush()
 		
 		self.asleep = False
 	
 	@staticmethod
 	def programBitstream(ft232r, jtag, logger, processed_bitstream):
-		# Select the device
-		jtag.reset()
-		jtag.part(jtag.deviceCount-1)
-		
-		jtag.instruction(BYPASS) 
-		jtag.shift_ir()
+		with ft232r.lock:
+			# Select the device
+			jtag.reset()
+			jtag.part(jtag.deviceCount-1)
+			
+			jtag.instruction(BYPASS) 
+			jtag.shift_ir()
 
-		jtag.instruction(JPROGRAM)
-		jtag.shift_ir()
+			jtag.instruction(JPROGRAM)
+			jtag.shift_ir()
 
-		jtag.instruction(CFG_IN)
-		jtag.shift_ir()
+			jtag.instruction(CFG_IN)
+			jtag.shift_ir()
 
-		# Clock TCK for 10000 cycles
-		jtag.runtest(10000)
+			# Clock TCK for 10000 cycles
+			jtag.runtest(10000)
 
-		jtag.instruction(CFG_IN)
-		jtag.shift_ir()
-		jtag.shift_dr([0]*32)
-		jtag.instruction(CFG_IN)
-		jtag.shift_ir()
+			jtag.instruction(CFG_IN)
+			jtag.shift_ir()
+			jtag.shift_dr([0]*32)
+			jtag.instruction(CFG_IN)
+			jtag.shift_ir()
 
-		ft232r.flush()
-		
-		# Load bitstream into CFG_IN
-		jtag.load_bitstream(processed_bitstream, logger.updateProgress)
+			ft232r.flush()
+			
+			# Load bitstream into CFG_IN
+			jtag.load_bitstream(processed_bitstream, logger.updateProgress)
 
-		jtag.instruction(JSTART)
-		jtag.shift_ir()
+			jtag.instruction(JSTART)
+			jtag.shift_ir()
 
-		# Let the device start
-		jtag.runtest(24)
-		
-		jtag.instruction(BYPASS)
-		jtag.shift_ir()
-		jtag.instruction(BYPASS)
-		jtag.shift_ir()
+			# Let the device start
+			jtag.runtest(24)
+			
+			jtag.instruction(BYPASS)
+			jtag.shift_ir()
+			jtag.instruction(BYPASS)
+			jtag.shift_ir()
 
-		jtag.instruction(JSTART)
-		jtag.shift_ir()
+			jtag.instruction(JSTART)
+			jtag.shift_ir()
 
-		jtag.runtest(24)
-		
-		# Check done pin
-		#jtag.instruction(BYPASS)
-		# TODO: Figure this part out. & 0x20 should equal 0x20 to check the DONE pin ... ???
-		#print jtag.read_ir() # & 0x20 == 0x21
-		#jtag.instruction(BYPASS)
-		#jtag.shift_ir()
-		#jtag.shift_dr([0])
+			jtag.runtest(24)
+			
+			# Check done pin
+			#jtag.instruction(BYPASS)
+			# TODO: Figure this part out. & 0x20 should equal 0x20 to check the DONE pin ... ???
+			#print jtag.read_ir() # & 0x20 == 0x21
+			#jtag.instruction(BYPASS)
+			#jtag.shift_ir()
+			#jtag.shift_dr([0])
 
-		ft232r.flush()
+			ft232r.flush()

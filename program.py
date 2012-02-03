@@ -86,7 +86,7 @@ with FT232R() as ft232r:
 	for id, fpga in enumerate(fpga_list):
 		fpga.id = id
 		logger.reportDebug("Discovering FPGA %d ..." % id, False)
-		fpga.jtag.detect()
+		fpga.detect()
 		
 		logger.reportDebug("Found %i device%s:" % (fpga.jtag.deviceCount,
 			's' if fpga.jtag.deviceCount != 1 else ''), False)
