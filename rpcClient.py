@@ -150,11 +150,8 @@ class RPCClient:
 	def getNewJob(self, fpga, work=None):
 		try:
 			# Empty the job queue:
-			while True:
-				try:
-					fpga.jobqueue.get(False)
-				except Empty:
-					break
+			while fpga.getJob() is not None:
+				pass
 			
 			if work is None:
 				(self.connection, work) = self.getwork(self.connection, fpga.id)
