@@ -320,7 +320,14 @@ class FT232R:
 		if (code0 >> 15) & 1 == 1: code0 -= (1 << 16)
 		if (code1 >> 15) & 1 == 1: code1 -= (1 << 16)
 		
-		temp0 = (code0 >> 2) * 0.03125
-		temp1 = (code1 >> 2) * 0.03125
+		if code0 == 0xFFFF or code0 == 0:
+			temp0 = None
+		else:
+			temp0 = (code0 >> 2) * 0.03125
+		
+		if code1 == 0xFFFF or code1 == 0:
+			temp1 = None
+		else:
+			temp1 = (code1 >> 2) * 0.03125
 		
 		return (temp0, temp1)
