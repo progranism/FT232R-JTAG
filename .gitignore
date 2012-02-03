@@ -3,3 +3,5 @@
 *.pyc
 Documents
 bitstream
+*.bit
+*.log
