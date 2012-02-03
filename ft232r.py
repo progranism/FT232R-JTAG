@@ -282,7 +282,7 @@ class FT232R:
 				if time.time() - start_time > 5:
 					self._log("Timeout while reading data!")
 					return data
-				time.sleep(0.1)
+				#time.sleep(0.1)
 				#self._log("QueueStatus: " + str(self.handle.getQueueStatus()))
 			
 			data.extend(self.handle.read(wrote))
