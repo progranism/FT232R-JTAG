@@ -69,9 +69,11 @@ fpga_list = []
 
 with FT232R() as ft232r:
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
-	ft232r.open(settings.devicenum, portlist)
-	
-	logger.reportOpened(ft232r.devicenum, ft232r.serial)
+	if ft232r.open(settings.devicenum, portlist):
+		logger.reportOpened(ft232r.devicenum, ft232r.serial)
+	else:
+		logger.log("ERROR: FT232R device not opened!", False)
+		exit()
 	
 	if settings.chain == 0 or settings.chain == 1:
 		fpga_list.append(FPGA(ft232r, settings.chain, logger))
