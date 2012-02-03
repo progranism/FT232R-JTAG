@@ -122,7 +122,6 @@ def mineLoop(fpga_list):
 					nonce = fpga.readNonce()
 				#logger.reportDebug("%d: Writing job..." % fpga.id)
 				fpga.writeJob(job)
-				#fpga.clearQueue()
 				if nonce is not None:
 					handleNonce(fpga.current_job, nonce, fpga.id)
 				fpga.current_job = job
@@ -153,9 +152,11 @@ try:
 	# open FT232R
 	ft232r = FT232R()
 	portlist = FT232R_PortList(7, 6, 5, 4, 3, 2, 1, 0)
-	ft232r.open(settings.devicenum, portlist)
-	
-	logger.reportOpened(ft232r.devicenum, ft232r.serial)
+	if ft232r.open(settings.devicenum, portlist):
+		logger.reportOpened(ft232r.devicenum, ft232r.serial)
+	else:
+		logger.log("ERROR: FT232R device not opened!", False)
+		exit()
 	
 	if settings.chain == 0 or settings.chain == 1:
 		fpga_list.append(FPGA(ft232r, settings.chain, logger))

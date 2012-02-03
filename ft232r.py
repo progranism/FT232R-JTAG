@@ -143,8 +143,6 @@ class FT232R:
 		
 		if devicenum is not None:
 			self.handle = d2xx.open(devicenum)
-		else:
-			raise NoAvailableDevices()
 		
 		if self.handle is not None:
 			self._log("Opened device %i" % devicenum)
@@ -154,6 +152,9 @@ class FT232R:
 			self._setBaudRate(DEFAULT_FREQUENCY)
 			self._setSyncMode()
 			self._purgeBuffers()
+			return True
+		else:
+			return False
 	
 	def close(self):
 		if self.handle is None:
