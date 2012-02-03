@@ -198,7 +198,7 @@ class FPGA:
 
 			self.ft232r.flush()
 		
-		self.logger.reportDebug("%d: Job data loaded in %.3f seconds" % (self.id, time.time() - start_time))
+		#self.logger.reportDebug("%d: Job data loaded in %.3f seconds" % (self.id, time.time() - start_time))
 		self.logger.reportDebug("%d: Job data loaded" % self.id)
 	
 	def getJob(self):
