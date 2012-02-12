@@ -41,7 +41,7 @@ import cPickle as pickle
 import time
 
 # Dictionary for looking up idcodes from device names:
-idcode_lut = {'6slx150fgg484': 0x401d093, '6slx45csg324': 0x4008093}
+idcode_lut = {'6slx150fgg484': 0x401d093, '6slx45csg324': 0x4008093, '6slx150tfgg676': 0x403D093}
 
 class BitFileReadError(Exception):
 	_corruptFileMessage = "Unable to parse .bit file; header is malformed. Is it really a Xilinx .bit file?"

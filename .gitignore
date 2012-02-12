@@ -4,4 +4,6 @@
 Documents
 bitstream
 *.bit
+*.bit.*
 *.log
+*.bak

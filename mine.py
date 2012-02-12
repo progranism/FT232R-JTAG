@@ -179,9 +179,11 @@ try:
 		logger.reportDebug("Found %i device%s:" % (fpga.jtag.deviceCount,
 			's' if fpga.jtag.deviceCount != 1 else ''), False)
 
-		for idcode in fpga.jtag.idcodes:
+		if len(fpga.jtag.idcodes) > 0:
+			idcode = fpga.jtag.idcodes[-1]
 			msg = " FPGA" + str(id) + ": "
 			msg += JTAG.decodeIdcode(idcode)
+			msg += "   FIRMWARE REV: " + str(fpga.firmware_rev)
 			logger.reportDebug(msg, False)
 	
 	logger.log("Connected to %d FPGAs" % len(fpga_list), False)

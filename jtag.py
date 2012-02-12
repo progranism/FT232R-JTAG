@@ -43,7 +43,7 @@ class UnknownIDCode(Exception):
 # LUT for instruction register length based on ID code:
 irlength_lut = {0x403d093: 6, 0x401d093: 6, 0x4008093: 6, 0x5057093: 16, 0x5059093: 16};
 # LUT for device name based on ID code:
-name_lut = {0x403d093: 'Spartan 6 LX150T', 0x401d093: 'Spartan 6 LX150'}
+name_lut = {0x403d093: 'Spartan 6 LX150T', 0x401d093: 'Spartan 6 LX150', 0x5059093: 'Unknown', 0x5057093: 'Unknown'}
 
 class JTAG():
 	def __init__(self, ft232r, chain):

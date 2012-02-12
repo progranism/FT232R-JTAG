@@ -1,6 +1,6 @@
 #!/usr/bin/python
-# Copyright (C) 2011 by fpgaminer <fpgaminer@bitcoin-mining.com>
-#                       fizzisist <fizzisist@fpgamining.com>
+# Copyright (C) 2011-2012 by fpgaminer <fpgaminer@bitcoin-mining.com>
+#                            fizzisist <fizzisist@fpgamining.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -96,9 +96,10 @@ with FT232R() as ft232r:
 		if fpga.jtag.deviceCount > 1:
 			logger.log("Warning:", False)
 			logger.log("This software currently supports only one device per chain.", False)
-			logger.log("Only part 0 will be programmed.", False)
+			logger.log("Only the last part will be programmed.", False)
 
-		for idcode in fpga.jtag.idcodes:
+		if fpga.jtag.deviceCount > 0:
+			idcode = fpga.jtag.idcodes[-1]
 			msg = " FPGA" + str(id) + ": "
 			msg += JTAG.decodeIdcode(idcode)
 			logger.reportDebug(msg, False)
@@ -113,7 +114,7 @@ with FT232R() as ft232r:
 		jtag.idcodes = [bitfile.idcode]
 		jtag._processIdcodes()
 	else:
-		jtag = fpga_list[settings.chain].jtag
+		jtag = fpga_list[0].jtag
 	
 	if bitfile.processed[settings.chain]:
 		logger.log("Loading pre-processed bitstream...", False)
