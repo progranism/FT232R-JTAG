@@ -170,6 +170,38 @@ class FPGA:
 			self.jtag.tap.reset()
 			self.ft232r.flush()
 	
+	def _burstWriteHelper(self, address, data):
+		address = address & 0xF
+		x = int2bits(data, 32)
+		x += int2bits(address, 4)
+		x += [1]
+		x = x + jtagcomm_checksum(x)
+
+		self.jtag.shift_dr(x)
+
+	
+	# Writes multiple 32-bit registers.
+	# data should be an array of 32-bit values
+	# address is the starting address.
+	# TODO: Implement readback of some kind to ensure all our writes succeeded.
+	# TODO: This is difficult, because reading back data will slow things down.
+	# TODO: If the JTAG class let us read data back after a shift, we could probably
+	# TODO: use that at the end of the burst write.
+	def _burstWrite(self, address, data):
+		with self.ft232r.lock:
+			if self.asleep: self.wake()
+			self.jtag.tap.reset()
+			self.jtag.instruction(USER_INSTRUCTION)
+			self.jtag.shift_ir()
+
+			for offset in range(len(data)):
+				self._burstWriteHelper(address + offset, data[offset])
+
+			self.jtag.tap.reset()
+			self.ft232r.flush()
+
+		return True
+	
 	# TODO: Remove backwards compatibility in a future rev.
 	def _old_readNonce(self):
 		with self.ft232r.lock:
@@ -289,7 +321,7 @@ class FPGA:
 	def _readNonce(self):
 		nonce = self._readRegister(0xE)
 
-		if nonce == 0x00000000:
+		if nonce == 0xFFFFFFFF:
 			return None
 		return nonce
 	
@@ -301,7 +333,6 @@ class FPGA:
 		
 		self.logger.reportDebug("%d: Queue cleared" % self.id)
 	
-	# TODO: We should add readback checks here to make sure the job is written correctly
 	def _writeJob(self, job):
 		# We need the 256-bit midstate, and 12 bytes from data.
 		# The first 64 bytes of data are already hashed (hence midstate),
@@ -312,37 +343,39 @@ class FPGA:
 		
 		midstate = hexstr2array(job.midstate)
 		data = hexstr2array(job.data)[64:64+12]
-
 		data = midstate + data
 
-		# Job's hex strings are LSB first, and the FPGA wants them MSB first.
-		#midstate.reverse()
-		#data.reverse()
+		words = []
 
-		with self.ft232r.lock:
-			#self.logger.reportDebug("%d: Loading job data..." % self.id)
-			
-			if self.asleep: self.wake()
-			self.jtag.tap.reset()
-			self.jtag.instruction(USER_INSTRUCTION)
-			self.jtag.shift_ir()
+		for i in range(11):
+			word = data[i*4] | (data[i*4+1] << 8) | (data[i*4+2] << 16) | (data[i*4+3] << 24)
+			words.append(word)
 
-			for i in range(11):
-				addr = i + 1
-				x = int2bits(data[i*4], 8)
-				x += int2bits(data[i*4+1], 8)
-				x += int2bits(data[i*4+2], 8)
-				x += int2bits(data[i*4+3], 8)
-				x += int2bits(addr, 4)
-				x += [1]
-				x = x + jtagcomm_checksum(x)
-				self.jtag.shift_dr(x)
-
-			self.jtag.tap.reset()
-			self.ft232r.flush()
+		if not self._burstWrite(1, words):
+			self.logger.reportDebug("%d: ERROR: Loading job data failed; readback failure" % self.id)
+			return
 		
-		#self.logger.reportDebug("%d: Job data loaded in %.3f seconds" % (self.id, time.time() - start_time))
-		self.logger.reportDebug("%d: Job data loaded" % self.id)
+		self.logger.reportDebug("%d: Job data loaded in %.3f seconds" % (self.id, time.time() - start_time))
+		#self.logger.reportDebug("%d: Job data loaded" % self.id)
+	
+	# Read the FPGA's current clock speed, in MHz
+	# NOTE: This is currently just what we've written into the clock speed
+	# register, so it does NOT take into account hard limits in the firmware.
+	def readClockSpeed(self):
+		if self.firmware_rev == 0:
+			return None
+		
+		frequency = self._readRegister(0xD)
+
+		return frequency
+
+	# Set the FPGA's clock speed, in MHz
+	# NOTE: Be VERY careful not to set the clock speed too high!!!
+	def setClockSpeed(self, speed):
+		if self.firmware_rev == 0:
+			return False
+
+		return self._writeRegister(0xD, speed)
 	
 	def readNonce(self):
 		if self.firmware_rev == 0:
