@@ -74,7 +74,7 @@ class FPGA:
 		self.chain = chain
 		self.jtag = JTAG(ft232r, chain)
 		self.logger = logger
-		self.id = None
+		self.id = -1
 		
 		self.current_job = None
 		self.last_job = 0
