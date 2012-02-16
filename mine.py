@@ -51,7 +51,16 @@ parser.add_option("-w", "--worker", type="str", dest="worker",
                   help="Worker username and password for the pool, e.g. user:pass")
 parser.add_option("-s", "--sleep", action="store_true", dest="sleep", default=False,
                   help="Put FPGAs to sleep upon exit [EXPERIMENTAL]")
+parser.add_option("--overclock", type="int", dest="overclock", default=None,
+		  help="Set the FPGA's clocking speed (in MHz) [WARNING: Use with Extreme Caution]")
 settings, args = parser.parse_args()
+
+# Special error to make sure the user doesn't do something terrible
+if settings.overclock is not None and (settings.overclock > 300 or settings.overclock < 4):
+	print "ERROR: Overclock set too high!!! Please be careful with this setting, it could DAMAGE your Miner!!!"
+	parser.print_usage()
+	exit()
+
 
 class Object(object):
 	pass
@@ -187,6 +196,18 @@ try:
 			logger.reportDebug(msg, False)
 	
 	logger.log("Connected to %d FPGAs" % len(fpga_list), False)
+
+	if settings.overclock is not None:
+		for fpga in fpga_list:
+			fpga.setClockSpeed(settings.overclock)
+
+	
+	for fpga in fpga_list:
+		clock_speed = fpga.readClockSpeed()
+
+		clock_speed = "???" if clock_speed is None else str(clock_speed)
+
+		logger.log("FPGA %d is running at %sMHz" % (fpga.id, clock_speed), False)
 	
 	logger.start()
 	rpcclient.start()
