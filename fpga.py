@@ -89,6 +89,7 @@ class FPGA:
 		self.asleep = True
 
 		self.firmware_rev = 0
+		self.firmware_build = 0
 	
 	def detect(self):
 		with self.ft232r.lock:
@@ -102,8 +103,10 @@ class FPGA:
 
 				if usercode == 0xFFFFFFFF:
 					self.firmware_rev = 0
+					self.firmware_build = 0
 				else:
 					self.firmware_rev = (usercode >> 8) & 0xFF
+					self.firmware_build = usercode & 0xFF
 
 	# Read the FPGA's USERCODE register, which gets set by the firmware
 	# In our case this should be 0xFFFFFFFF for all old firmware revs,

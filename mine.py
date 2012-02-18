@@ -192,7 +192,8 @@ try:
 			idcode = fpga.jtag.idcodes[-1]
 			msg = " FPGA" + str(id) + ": "
 			msg += JTAG.decodeIdcode(idcode)
-			msg += "   FIRMWARE REV: " + str(fpga.firmware_rev)
+			msg += " - Firmware: rev " + str(fpga.firmware_rev)
+			msg += ", build " + str(fpga.firmware_build)
 			logger.reportDebug(msg, False)
 	
 	logger.log("Connected to %d FPGAs" % len(fpga_list), False)
