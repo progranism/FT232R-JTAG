@@ -61,7 +61,7 @@ class BitFileMismatch(Exception):
 class BitFileUnknown(Exception):
   _unknownMessage = "Bitfile has an unknown UserID! Was this bitstream built for the X6500?"
   def __init__(self, value=None):
-    self.parameter = BitFileReadError._unknownhMessage if value is None else value
+    self.parameter = BitFileReadError._unknownMessage if value is None else value
   def __str__(self):
     return repr(self.parameter)
   
@@ -92,7 +92,7 @@ class BitFile:
         bitfile.rev = (bitfile.userid >> 8) & 0xFF
         bitfile.build = bitfile.userid & 0xFF
       else:
-        raise BitFileReadError()
+        raise BitFileUnknown()
         
       bitfile.part = BitFile._readField(f, 'b').rstrip('\0')
       bitfile.date = BitFile._readField(f, 'c').rstrip('\0')
