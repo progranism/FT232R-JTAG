@@ -26,9 +26,9 @@
 #
 # Consists of an initial 11 bytes of unknown content (???)
 # Then 5 fields of the format:
-#	1 byte key
-#	2 byte, Big Endian Length (EXCEPT: The last field, which has a 4 byte length)
-#	data (of length specified above ^)
+#  1 byte key
+#  2 byte, Big Endian Length (EXCEPT: The last field, which has a 4 byte length)
+#  data (of length specified above ^)
 # 
 # The 5 fields have keys in the sequence a, b, c, d, e
 # The data from the first 4 fields are strings:
@@ -39,160 +39,178 @@
 import os.path
 import cPickle as pickle
 import time
+from binascii import unhexlify
 
 # Dictionary for looking up idcodes from device names:
 idcode_lut = {'6slx150fgg484': 0x401d093, '6slx45csg324': 0x4008093, '6slx150tfgg676': 0x403D093}
 
 class BitFileReadError(Exception):
-	_corruptFileMessage = "Unable to parse .bit file; header is malformed. Is it really a Xilinx .bit file?"
-
-	def __init__(self, value=None):
-		self.parameter = BitFileReadError._corruptFileMessage if value is None else value
-	def __str__(self):
-		return repr(self.parameter)
-		
+  _corruptFileMessage = "Unable to parse .bit file; header is malformed. Is it really a Xilinx .bit file?"
+  def __init__(self, value=None):
+    self.parameter = BitFileReadError._corruptFileMessage if value is None else value
+  def __str__(self):
+    return repr(self.parameter)
+    
 class BitFileMismatch(Exception):
-	_mismatchMessage = "Device IDCode does not match bitfile IDCode! Was this bitstream built for this FPGA?"
-
-	def __init__(self, value=None):
-		self.parameter = BitFileReadError._mismatchMessage if value is None else value
-	def __str__(self):
-		return repr(self.parameter)
-	
+  _mismatchMessage = "Device IDCode does not match bitfile IDCode! Was this bitstream built for this FPGA?"
+  def __init__(self, value=None):
+    self.parameter = BitFileReadError._mismatchMessage if value is None else value
+  def __str__(self):
+    return repr(self.parameter)
+    
+class BitFileUnknown(Exception):
+  _unknownMessage = "Bitfile has an unknown UserID! Was this bitstream built for the X6500?"
+  def __init__(self, value=None):
+    self.parameter = BitFileReadError._unknownhMessage if value is None else value
+  def __str__(self):
+    return repr(self.parameter)
+  
 class Object(object):
-	pass
+  pass
 
 class BitFile:
-	"""Read a .bit file and return a BitFile object."""
-	@staticmethod
-	def read(name):
-		with open(name, 'rb') as f:
-			bitfile = BitFile()
-			
-			# 11 bytes of unknown data
-			if BitFile._readLength(f) != 9:
-				raise BitFileReadError()
-			
-			BitFile._readOrDie(f, 11)
-			
-			bitfile.designname = BitFile._readField(f, 'a').rstrip('\0')
-			bitfile.part = BitFile._readField(f, 'b').rstrip('\0')
-			bitfile.date = BitFile._readField(f, 'c').rstrip('\0')
-			bitfile.time = BitFile._readField(f, 'd').rstrip('\0')
-			bitfile.idcode = idcode_lut[bitfile.part]
-			
-			if BitFile._readOrDie(f, 1) != 'e':
-				raise BitFileReadError()
-			
-			length = BitFile._readLength4(f)
-			bitfile.bitstream = BitFile._readOrDie(f, length)
-			
-			bitfile.processed = [False]*3
-			
-			for i in range(3):
-				processed_name = name + '.' + str(i)
-				if os.path.isfile(processed_name):
-					bitfile.processed[i] = True
-			
-			return bitfile
-	
-	@staticmethod
-	def pre_process(bitstream, jtag, chain, progressCallback=None):
-		CHUNK_SIZE = 4096*4
-		chunk = ""
-		chunks = []
-		
-		bytetotal = len(bitstream)
-		start_time = time.time()
-		last_update = 0
-		written = 0
+  """Read a .bit file and return a BitFile object."""
+  @staticmethod
+  def read(name):
+    with open(name, 'rb') as f:
+      bitfile = BitFile()
+      
+      # 11 bytes of unknown data
+      if BitFile._readLength(f) != 9:
+        raise BitFileReadError()
+      
+      BitFile._readOrDie(f, 11)
+      
+      # the designname field should look something like:
+      # fpgaminer_top.ncd;HW_TIMEOUT=FALSE;UserID=0xFFFFFFFF
+      bitfile.designname = BitFile._readField(f, 'a').rstrip('\0')
+      bitfile.userid = int(bitfile.designname.split(';')[-1].split('=')[-1], base=16)
+      if bitfile.userid == 0xFFFFFFFF:
+        bitfile.rev = 0
+        bitfile.build = 0
+      elif (bitfile.userid >> 16) & 0xFFFF == 0x4224:
+        bitfile.rev = (bitfile.userid >> 8) & 0xFF
+        bitfile.build = bitfile.userid & 0xFF
+      else:
+        raise BitFileReadError()
+        
+      bitfile.part = BitFile._readField(f, 'b').rstrip('\0')
+      bitfile.date = BitFile._readField(f, 'c').rstrip('\0')
+      bitfile.time = BitFile._readField(f, 'd').rstrip('\0')
+      bitfile.idcode = idcode_lut[bitfile.part]
+      
+      if BitFile._readOrDie(f, 1) != 'e':
+        raise BitFileReadError()
+      
+      length = BitFile._readLength4(f)
+      bitfile.bitstream = BitFile._readOrDie(f, length)
+      
+      bitfile.processed = [False]*3
+      
+      for i in range(3):
+        processed_name = name + '.' + str(i)
+        if os.path.isfile(processed_name):
+          bitfile.processed[i] = True
+      
+      return bitfile
+  
+  @staticmethod
+  def pre_process(bitstream, jtag, chain, progressCallback=None):
+    CHUNK_SIZE = 4096*4
+    chunk = ""
+    chunks = []
+    
+    bytetotal = len(bitstream)
+    start_time = time.time()
+    last_update = 0
+    written = 0
 
-		for b in bitstream[:-1]:
-			d = ord(b)
-			
-			for i in range(7, -1, -1):
-				x = (d >> i) & 1
-				chunk += jtag._formatJtagClock(tdi=x)
-					
-				if len(chunk) >= CHUNK_SIZE:
-					chunks.append(chunk)
-					chunk = ""
-			
-			written += 1
-			if time.time() > (last_update + 1) and progressCallback:
-				progressCallback(start_time, time.time(), written, bytetotal)
-				last_update = time.time()
-		
-		if len(chunk) > 0:
-			chunks.append(chunk)
+    for b in bitstream[:-1]:
+      d = ord(b)
+      
+      for i in range(7, -1, -1):
+        x = (d >> i) & 1
+        chunk += jtag._formatJtagClock(tdi=x)
+          
+        if len(chunk) >= CHUNK_SIZE:
+          chunks.append(chunk)
+          chunk = ""
+      
+      written += 1
+      if time.time() > (last_update + 1) and progressCallback:
+        progressCallback(start_time, time.time(), written, bytetotal)
+        last_update = time.time()
+    
+    if len(chunk) > 0:
+      chunks.append(chunk)
 
-		last_bits = []
-		d = ord(bitstream[-1])
-		for i in range(7, -1, -1):
-			last_bits.append((d >> i) & 1)
-		
-		progressCallback(start_time, time.time(), bytetotal, bytetotal)
+    last_bits = []
+    d = ord(bitstream[-1])
+    for i in range(7, -1, -1):
+      last_bits.append((d >> i) & 1)
+    
+    progressCallback(start_time, time.time(), bytetotal, bytetotal)
 
-		#for i in range(self.current_part):
-		#	last_bits.append(0)
-		
-		processed_bitstream = Object()
-		processed_bitstream.chunks = chunks
-		processed_bitstream.last_bits = last_bits
-		
-		return processed_bitstream
-	
-	@staticmethod
-	def save_processed(name, processed_bitstream, chain):
-		processed_name = name.split('.')[0] + ".bit." + str(chain)
-		if processed_bitstream is not None:
-			pickle.dump(processed_bitstream, open(processed_name, "wb"), pickle.HIGHEST_PROTOCOL)
-	
-	@staticmethod
-	def load_processed(name, chain):
-		processed_name = name + "." + str(chain)
-		return pickle.load(open(processed_name, "rb"))
-	
-	# Read a 2-byte, unsigned, Big Endian length.
-	@staticmethod
-	def _readLength(filestream):
-		length = BitFile._readOrDie(filestream, 2)
+    #for i in range(self.current_part):
+    #  last_bits.append(0)
+    
+    processed_bitstream = Object()
+    processed_bitstream.chunks = chunks
+    processed_bitstream.last_bits = last_bits
+    
+    return processed_bitstream
+  
+  @staticmethod
+  def save_processed(name, processed_bitstream, chain):
+    processed_name = name.split('.')[0] + ".bit." + str(chain)
+    if processed_bitstream is not None:
+      pickle.dump(processed_bitstream, open(processed_name, "wb"), pickle.HIGHEST_PROTOCOL)
+  
+  @staticmethod
+  def load_processed(name, chain):
+    processed_name = name + "." + str(chain)
+    return pickle.load(open(processed_name, "rb"))
+  
+  # Read a 2-byte, unsigned, Big Endian length.
+  @staticmethod
+  def _readLength(filestream):
+    length = BitFile._readOrDie(filestream, 2)
 
-		return (ord(length[0]) << 8) | ord(length[1])
+    return (ord(length[0]) << 8) | ord(length[1])
 
-	@staticmethod
-	def _readLength4(filestream):
-		length = BitFile._readOrDie(filestream, 4)
+  @staticmethod
+  def _readLength4(filestream):
+    length = BitFile._readOrDie(filestream, 4)
 
-		return (ord(length[0]) << 24) | (ord(length[1]) << 16) | (ord(length[2]) << 8) | ord(length[3])
+    return (ord(length[0]) << 24) | (ord(length[1]) << 16) | (ord(length[2]) << 8) | ord(length[3])
 
-	# Read length bytes, or throw an exception
-	@staticmethod
-	def _readOrDie(filestream, length):
-		data = filestream.read(length)
+  # Read length bytes, or throw an exception
+  @staticmethod
+  def _readOrDie(filestream, length):
+    data = filestream.read(length)
 
-		if len(data) < length:
-			raise BitFileReadError()
+    if len(data) < length:
+      raise BitFileReadError()
 
-		return data
+    return data
 
-	@staticmethod
-	def _readField(filestream, key):
-		if BitFile._readOrDie(filestream, 1) != key:
-			raise BitFileReadError()
+  @staticmethod
+  def _readField(filestream, key):
+    if BitFile._readOrDie(filestream, 1) != key:
+      raise BitFileReadError()
 
-		length = BitFile._readLength(filestream)
-		data = BitFile._readOrDie(filestream, length)
+    length = BitFile._readLength(filestream)
+    data = BitFile._readOrDie(filestream, length)
 
-		return data
-		
+    return data
+    
 
-	def __init__(self):
-		self.designname = None
-		self.part = None
-		self.date = None
-		self.time = None
-		self.length = None
-		self.idcode = None
-		self.bitstream = None
+  def __init__(self):
+    self.designname = None
+    self.part = None
+    self.date = None
+    self.time = None
+    self.length = None
+    self.idcode = None
+    self.bitstream = None
 
