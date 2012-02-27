@@ -39,7 +39,6 @@
 import os.path
 import cPickle as pickle
 import time
-from binascii import unhexlify
 
 # Dictionary for looking up idcodes from device names:
 idcode_lut = {'6slx150fgg484': 0x401d093, '6slx45csg324': 0x4008093, '6slx150tfgg676': 0x403D093}
@@ -207,6 +206,8 @@ class BitFile:
 
   def __init__(self):
     self.designname = None
+    self.rev = None
+    self.build = None
     self.part = None
     self.date = None
     self.time = None
