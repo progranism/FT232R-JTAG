@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+import sys
 from ft232r import FT232R, FT232R_PortList
 from jtag import JTAG
 from BitstreamReader import BitFile, BitFileReadError, BitFileMismatch
@@ -45,7 +46,7 @@ logger = ConsoleLogger(settings.verbose)
 if len(args) == 0:
   logger.log("ERROR: No bitstream file specified!", False)
   parser.print_usage()
-  exit()
+  sys.exit()
   
 ### Bitfile ###
 bitfileName = args[0]
@@ -56,7 +57,7 @@ try:
   bitfile = BitFile.read(bitfileName)
 except BitFileReadError, e:
   print e
-  exit()
+  sys.exit()
 
 logger.log("Bitstream file opened:", False)
 logger.log(" Design Name: %s" % bitfile.designname, False)
@@ -74,7 +75,7 @@ with FT232R() as ft232r:
     logger.reportOpened(ft232r.devicenum, ft232r.serial)
   else:
     logger.log("ERROR: FT232R device not opened!", False)
-    exit()
+    sys.exit()
   
   if settings.chain == 0 or settings.chain == 1:
     fpga_list.append(FPGA(ft232r, settings.chain, logger))
@@ -84,7 +85,7 @@ with FT232R() as ft232r:
   else:
     logger.log("ERROR: Invalid chain option!", False)
     parser.print_usage()
-    exit()
+    sys.exit()
   
   for id, fpga in enumerate(fpga_list):
     fpga.id = id

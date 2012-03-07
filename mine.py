@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+import sys
 from ft232r import FT232R, FT232R_PortList
 from jtag import JTAG
 from ConsoleLogger import ConsoleLogger
@@ -59,7 +60,7 @@ settings, args = parser.parse_args()
 if settings.overclock is not None and (settings.overclock > 300 or settings.overclock < 4):
 	print "ERROR: Overclock set too high!!! Please be careful with this setting, it could DAMAGE your Miner!!!"
 	parser.print_usage()
-	exit()
+	sys.exit()
 
 
 class Object(object):
@@ -144,11 +145,11 @@ def mineLoop(fpga_list):
 if settings.url is None:
 	print "ERROR: URL not specified!"
 	parser.print_usage()
-	exit()
+	sys.exit()
 if settings.worker is None:
 	print "ERROR: Worker not specified!"
 	parser.print_usage()
-	exit()
+	sys.exit()
 
 fpga_list = []
 
@@ -165,7 +166,7 @@ try:
 		logger.reportOpened(ft232r.devicenum, ft232r.serial)
 	else:
 		logger.log("ERROR: FT232R device not opened!", False)
-		exit()
+		sys.exit()
 	
 	if settings.chain == 0 or settings.chain == 1:
 		fpga_list.append(FPGA(ft232r, settings.chain, logger))
@@ -175,7 +176,7 @@ try:
 	else:
 		logger.log("ERROR: Invalid chain option!", False)
 		parser.print_usage()
-		exit()
+		sys.exit()
 	
 	logger.fpga_list = fpga_list
 	rpcclient.fpga_list = fpga_list
